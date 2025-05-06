@@ -8,6 +8,18 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
-    sourcemap: true
+    sourcemap: true,
+    rollupOptions: {
+      external: ['three', 'cannon-es'],
+      output: {
+        globals: {
+          'three': 'THREE',
+          'cannon-es': 'CANNON'
+        }
+      }
+    }
+  },
+  optimizeDeps: {
+    include: ['three', 'cannon-es']
   }
 }); 
