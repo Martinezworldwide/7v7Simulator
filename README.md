@@ -2,6 +2,9 @@
 
 A 3D soccer simulator built with Three.js and Cannon.js physics engine.
 
+https://martinezworldwide.github.io/7v7Simulator
+
+
 ## Features
 
 - Realistic 7v7 soccer simulation
