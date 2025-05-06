@@ -39,15 +39,13 @@ var Team = /*#__PURE__*/ function() {
                 var _this = this;
                 this.formation.positions.forEach(function(posData, index) {
                     var basePosition = new THREE.Vector3(posData.x, 0, posData.z);
-                    // Mirror position for away team
                     var initialX = _this.homeTeam ? basePosition.x : -basePosition.x;
-                    var initialZ = basePosition.z; // Do NOT mirror Z
+                    // Assign unique, evenly spaced Z positions
+                    var numPlayers = _this.formation.positions.length;
+                    var zStep = CONSTANTS.FIELD_HEIGHT * 0.8 / (numPlayers - 1);
+                    var initialZ = -CONSTANTS.FIELD_HEIGHT * 0.4 + index * zStep;
                     var position = new THREE.Vector3(initialX, 0, initialZ);
-                    // Scale position based on field dimensions from [-1, 1] range to field coords
-                    position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8; // Place slightly within half
-                    position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
-                    // Apply small random jitter to Z to avoid perfect line-ups
-                    position.z += (Math.random() - 0.5) * (CONSTANTS.FIELD_HEIGHT * 0.1);
+                    position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8;
                     var player = new Player(_this.id, _this.color, position, posData.role);
                     _this.players.push(player);
                 });
@@ -77,15 +75,15 @@ var Team = /*#__PURE__*/ function() {
                 this.formation.positions.forEach(function(posData, index) {
                     var basePosition = new THREE.Vector3(posData.x, 0, posData.z);
                     var initialX = _this.homeTeam ? basePosition.x : -basePosition.x;
-                    var initialZ = basePosition.z; // Do NOT mirror Z
+                    // Assign unique, evenly spaced Z positions
+                    var numPlayers = _this.formation.positions.length;
+                    var zStep = CONSTANTS.FIELD_HEIGHT * 0.8 / (numPlayers - 1);
+                    var initialZ = -CONSTANTS.FIELD_HEIGHT * 0.4 + index * zStep;
                     var position = new THREE.Vector3(initialX, 0, initialZ);
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8;
-                    position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
-                    // Apply small random jitter to Z on reset to avoid perfect line-ups
-                    position.z += (Math.random() - 0.5) * (CONSTANTS.FIELD_HEIGHT * 0.1);
                     if (_this.players[index]) {
-                        _this.players[index].initialPosition.copy(position); // Update initial pos reference
-                        _this.players[index].resetPosition(); // Reset player state and mesh position
+                        _this.players[index].initialPosition.copy(position);
+                        _this.players[index].resetPosition();
                     }
                 });
             }
