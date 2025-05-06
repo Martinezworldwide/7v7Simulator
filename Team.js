@@ -46,12 +46,16 @@ var Team = /*#__PURE__*/ function() {
                     // Scale position based on field dimensions from [-1, 1] range to field coords
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8; // Place slightly within half
                     position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
+                    // Apply small random jitter to Z to avoid perfect line-ups
+                    position.z += (Math.random() - 0.5) * (CONSTANTS.FIELD_HEIGHT * 0.1);
                     var player = new Player(_this.id, _this.color, position, posData.role);
                     _this.players.push(player);
                 });
                 if (this.players.length !== CONSTANTS.PLAYERS_PER_TEAM) {
                     console.warn("Team ".concat(this.id, " formation has ").concat(this.players.length, " players, expected ").concat(CONSTANTS.PLAYERS_PER_TEAM));
                 }
+                // Debug: log each player's initial position
+                this.players.forEach(p => console.log(`Player ${p.teamId}-${p.role} initialPosition: x=${p.initialPosition.x.toFixed(2)}, z=${p.initialPosition.z.toFixed(2)}`));
             }
         },
         {
@@ -77,6 +81,8 @@ var Team = /*#__PURE__*/ function() {
                     var position = new THREE.Vector3(initialX, 0, initialZ);
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8;
                     position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
+                    // Apply small random jitter to Z on reset to avoid perfect line-ups
+                    position.z += (Math.random() - 0.5) * (CONSTANTS.FIELD_HEIGHT * 0.1);
                     if (_this.players[index]) {
                         _this.players[index].initialPosition.copy(position); // Update initial pos reference
                         _this.players[index].resetPosition(); // Reset player state and mesh position
