@@ -62,4 +62,4 @@ The project can be deployed to any static hosting service. Here are some options
 The project uses:
 - Vite for building and development
 - Three.js for 3D rendering
-- Cannon.js for physics simulation 
+- Cannon.js for physics simulation
