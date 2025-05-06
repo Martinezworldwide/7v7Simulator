@@ -233,6 +233,8 @@ var Player = /*#__PURE__*/ function() {
                 this.mesh.position.x = THREE.MathUtils.clamp(this.mesh.position.x, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2);
                 this.mesh.position.z = THREE.MathUtils.clamp(this.mesh.position.z, -CONSTANTS.FIELD_HEIGHT / 2, CONSTANTS.FIELD_HEIGHT / 2);
                 this.mesh.position.y = 0; // Ensure player stays on ground plane
+                // Debug: Log mesh Z position every frame
+                console.log(`Player ${this.teamId}-${this.role} mesh.position.z: ${this.mesh.position.z}`);
                 // Smoothly rotate player to face movement direction
                 if (this.velocity.lengthSq() > 0.01) {
                     var targetDirection = this.velocity.clone().normalize();

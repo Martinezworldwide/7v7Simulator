@@ -51,6 +51,10 @@ export class Game {
             this.gameObjects.push(player);
         });
 
+        // Debug: Log all initial Z positions for both teams
+        console.log('Team 1 initial Zs:', this.team1.players.map(p => p.initialPosition.z));
+        console.log('Team 2 initial Zs:', this.team2.players.map(p => p.initialPosition.z));
+
         // Possession Indicator
         const indicatorGeometry = new THREE.RingGeometry(
             CONSTANTS.PLAYER_RADIUS * 1.2,
