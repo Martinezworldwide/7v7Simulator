@@ -147,11 +147,13 @@ var Player = /*#__PURE__*/ function() {
                             var targetX = THREE.MathUtils.lerp(myPosition.x, goalX1, 0.2); // Move more decisively towards goal direction
                             // Influence Z position: blend initial lane, ball's Z, and some variation
                             var targetZ = this.initialPosition.z; // Start with their initial lane
+                            console.log(`Player ${this.teamId}-${this.role} initialPosition.z: ${this.initialPosition.z}`);
                             // Move somewhat towards the ball's current Z-coordinate, but not entirely
                             targetZ = THREE.MathUtils.lerp(targetZ, ballPosition.z, 0.3);
                             // Add some strategic lateral variation based on role or randomness
                             var lateralSpread = this.role === 'FORWARD' ? 5 : 10; // Forwards can be more direct, mids spread more
                             targetZ += (Math.random() - 0.5) * lateralSpread;
+                            console.log(`Player ${this.teamId}-${this.role} calculated targetZ: ${targetZ}`);
                             // Ensure the target is reasonably ahead if they are behind the ball
                             if (this.teamId === 1 && targetX < ballPosition.x || this.teamId === 2 && targetX > ballPosition.x) {
                                 targetX = ballPosition.x + (this.teamId === 1 ? 5 : -5); // Get slightly ahead of the ball
