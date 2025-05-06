@@ -231,7 +231,8 @@ var Player = /*#__PURE__*/ function() {
                 this.mesh.position.addScaledVector(this.velocity, deltaTime);
                 // Keep player on the field (simple clamp) - Y is fixed
                 this.mesh.position.x = THREE.MathUtils.clamp(this.mesh.position.x, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2);
-                this.mesh.position.z = THREE.MathUtils.clamp(this.mesh.position.z, -CONSTANTS.FIELD_HEIGHT / 2, CONSTANTS.FIELD_HEIGHT / 2);
+                // Force Z to always match initial lane
+                this.mesh.position.z = this.initialPosition.z;
                 this.mesh.position.y = 0; // Ensure player stays on ground plane
                 // Debug: Log mesh Z position every frame
                 console.log(`Player ${this.teamId}-${this.role} mesh.position.z: ${this.mesh.position.z}`);
