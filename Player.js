@@ -71,6 +71,8 @@ var Player = /*#__PURE__*/ function() {
                 this.kickAimStrength = 0;
                 var ballPosition = ball.mesh.position;
                 var myPosition = this.mesh.position;
+                // Teammate reference for separation forces
+                var teammates = this.teamId === 1 ? game.team1.players : game.team2.players;
                 // --- Basic AI Decision Making ---
                 var distanceToBall = myPosition.distanceTo(ballPosition);
                 var desiredDirection = new THREE.Vector3();
@@ -84,8 +86,7 @@ var Player = /*#__PURE__*/ function() {
                         var potentialPassTarget = null;
                         var distToPotentialPassTarget = Infinity; // Initialize with a high value
                         var passTargetScore = -Infinity;
-                        var allies = this.teamId === 1 ? game.team1.players : game.team2.players;
-                        allies.forEach(function(ally) {
+                        teammates.forEach(function(ally) {
                             if (ally === _this) return;
                             var vectorToAlly = new THREE.Vector3().subVectors(ally.mesh.position, myPosition);
                             var distToAlly = vectorToAlly.length();
@@ -148,20 +149,21 @@ var Player = /*#__PURE__*/ function() {
                             // Influence Z position: blend initial lane, ball's Z, and some variation
                             var targetZ = this.initialPosition.z; // Start with their initial lane
                             console.log(`Player ${this.teamId}-${this.role} initialPosition.z: ${this.initialPosition.z}`);
-                            // Move somewhat towards the ball's current Z-coordinate, but not entirely
-                            targetZ = THREE.MathUtils.lerp(targetZ, ballPosition.z, 0.3);
                             // Add some strategic lateral variation based on role or randomness
                             var lateralSpread = this.role === 'FORWARD' ? 5 : 10; // Forwards can be more direct, mids spread more
-                            targetZ += (Math.random() - 0.5) * lateralSpread;
+                            // Keep players roughly in their initial Z-lane (optionally add small per-frame jitter)
+                            // targetZ remains this.initialPosition.z
+                            // If you want small variation each frame, uncomment below:
+                            // targetZ += (Math.random() - 0.5) * lateralSpread;
                             console.log(`Player ${this.teamId}-${this.role} calculated targetZ: ${targetZ}`);
                             // Ensure the target is reasonably ahead if they are behind the ball
                             if (this.teamId === 1 && targetX < ballPosition.x || this.teamId === 2 && targetX > ballPosition.x) {
                                 targetX = ballPosition.x + (this.teamId === 1 ? 5 : -5); // Get slightly ahead of the ball
                             }
-                            var spaceTarget = new THREE.Vector3(targetX, myPosition.y, targetZ);
-                            // Clamp to field bounds
+                            // Enforce static Z-lane: use initialPosition.z to keep formation lanes
+                            var spaceTarget = new THREE.Vector3(targetX, myPosition.y, this.initialPosition.z);
+                            // Clamp X to field bounds (Z is fixed by lane)
                             spaceTarget.x = THREE.MathUtils.clamp(spaceTarget.x, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2);
-                            spaceTarget.z = THREE.MathUtils.clamp(spaceTarget.z, -CONSTANTS.FIELD_HEIGHT / 2, CONSTANTS.FIELD_HEIGHT / 2);
                             desiredDirection.subVectors(spaceTarget, myPosition).normalize();
                             this.actionState = 'FINDING_SPACE';
                             targetSpeed *= 0.7; // Move slower when finding space
@@ -216,6 +218,15 @@ var Player = /*#__PURE__*/ function() {
                 if (this.velocity.lengthSq() < 0.01) {
                     this.velocity.set(0, 0, 0);
                 }
+                // Separation repulsion to prevent players clumping
+                teammates.forEach(function(ally) {
+                    if (ally === _this) return;
+                    var dist = _this.mesh.position.distanceTo(ally.mesh.position);
+                    if (dist < CONSTANTS.PLAYER_SEPARATION_DISTANCE && dist > 0) {
+                        var repulse = new THREE.Vector3().subVectors(_this.mesh.position, ally.mesh.position).normalize().multiplyScalar(CONSTANTS.PLAYER_SEPARATION_FORCE * deltaTime);
+                        _this.velocity.add(repulse);
+                    }
+                });
                 // Apply position update
                 this.mesh.position.addScaledVector(this.velocity, deltaTime);
                 // Keep player on the field (simple clamp) - Y is fixed
