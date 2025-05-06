@@ -40,12 +40,10 @@ var Team = /*#__PURE__*/ function() {
                 this.formation.positions.forEach(function(posData, index) {
                     var basePosition = new THREE.Vector3(posData.x, 0, posData.z);
                     var initialX = _this.homeTeam ? basePosition.x : -basePosition.x;
-                    // Assign unique, evenly spaced Z positions
-                    var numPlayers = _this.formation.positions.length;
-                    var zStep = CONSTANTS.FIELD_HEIGHT * 0.8 / (numPlayers - 1);
-                    var initialZ = -CONSTANTS.FIELD_HEIGHT * 0.4 + index * zStep;
+                    var initialZ = basePosition.z;
                     var position = new THREE.Vector3(initialX, 0, initialZ);
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8;
+                    position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
                     var player = new Player(_this.id, _this.color, position, posData.role);
                     _this.players.push(player);
                 });
@@ -75,12 +73,10 @@ var Team = /*#__PURE__*/ function() {
                 this.formation.positions.forEach(function(posData, index) {
                     var basePosition = new THREE.Vector3(posData.x, 0, posData.z);
                     var initialX = _this.homeTeam ? basePosition.x : -basePosition.x;
-                    // Assign unique, evenly spaced Z positions
-                    var numPlayers = _this.formation.positions.length;
-                    var zStep = CONSTANTS.FIELD_HEIGHT * 0.8 / (numPlayers - 1);
-                    var initialZ = -CONSTANTS.FIELD_HEIGHT * 0.4 + index * zStep;
+                    var initialZ = basePosition.z;
                     var position = new THREE.Vector3(initialX, 0, initialZ);
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8;
+                    position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
                     if (_this.players[index]) {
                         _this.players[index].initialPosition.copy(position);
                         _this.players[index].resetPosition();
