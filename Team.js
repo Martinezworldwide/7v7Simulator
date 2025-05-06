@@ -41,7 +41,7 @@ var Team = /*#__PURE__*/ function() {
                     var basePosition = new THREE.Vector3(posData.x, 0, posData.z);
                     // Mirror position for away team
                     var initialX = _this.homeTeam ? basePosition.x : -basePosition.x;
-                    var initialZ = _this.homeTeam ? basePosition.z : -basePosition.z; // Also mirror Z for intuitive formation setup
+                    var initialZ = basePosition.z; // Do NOT mirror Z
                     var position = new THREE.Vector3(initialX, 0, initialZ);
                     // Scale position based on field dimensions from [-1, 1] range to field coords
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8; // Place slightly within half
@@ -73,7 +73,7 @@ var Team = /*#__PURE__*/ function() {
                 this.formation.positions.forEach(function(posData, index) {
                     var basePosition = new THREE.Vector3(posData.x, 0, posData.z);
                     var initialX = _this.homeTeam ? basePosition.x : -basePosition.x;
-                    var initialZ = _this.homeTeam ? basePosition.z : -basePosition.z;
+                    var initialZ = basePosition.z; // Do NOT mirror Z
                     var position = new THREE.Vector3(initialX, 0, initialZ);
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8;
                     position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
