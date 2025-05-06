@@ -1,4 +1,4 @@
-window.ImageGenerator = class ImageGenerator {
+export class ImageGenerator {
     static async requestEphemeralImageGeneration({ prompt, removeBackground = true } = {}) {
         const TIMEOUT_DURATION = 150000;
 
@@ -41,4 +41,4 @@ window.ImageGenerator = class ImageGenerator {
             }, TIMEOUT_DURATION);
         });
     }
-};
+}

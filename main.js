@@ -1,4 +1,6 @@
 import { Game } from './Game.js';
+import './ChatManager.js';
+import './ImageGenerator.js';
 
 // Get the render target
 const renderDiv = document.getElementById('renderDiv');

@@ -1,4 +1,4 @@
-window.ChatManager = class ChatManager {
+export class ChatManager {
     TIMEOUT_DURATION = 60000;
     chatHistory;
     characterDescription;
@@ -59,4 +59,4 @@ window.ChatManager = class ChatManager {
             }, this.TIMEOUT_DURATION);
         });
     }
-};
+}
