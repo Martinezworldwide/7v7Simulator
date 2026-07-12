@@ -19,6 +19,7 @@ function _create_class(Constructor, protoProps, staticProps) {
 }
 import * as THREE from 'three';
 import * as CONSTANTS from './constants.js';
+import { TeamTactics } from './TeamTactics.js';
 var Player = /*#__PURE__*/ function() {
     "use strict";
     function Player(teamId, color, initialPosition) {
@@ -48,8 +49,11 @@ var Player = /*#__PURE__*/ function() {
         {
             // Note: Added 'game' parameter and 'originalDeltaTime'
             key: "update",
-            value: function update(deltaTime, originalDeltaTime, ball, teamHasPossession, opponents, game) {
+            value: function update(deltaTime, originalDeltaTime, ball, teamHasPossession, opponents, game, tacticalTarget, shouldChaseLooseBall, phase) {
                 var _this = this;
+                tacticalTarget = tacticalTarget || this.initialPosition;
+                shouldChaseLooseBall = !!shouldChaseLooseBall;
+                phase = phase || 'NEUTRAL';
                 // If a large time jump occurred (e.g., tab was backgrounded), reset velocity
                 // to prevent players from continuing in a straight line with stale momentum.
                 // 0.2 seconds is a somewhat arbitrary threshold for a "long pause".
@@ -75,9 +79,17 @@ var Player = /*#__PURE__*/ function() {
                 var teammates = this.teamId === 1 ? game.team1.players : game.team2.players;
                 // --- Basic AI Decision Making ---
                 var distanceToBall = myPosition.distanceTo(ballPosition);
+                var distanceToTacticalTarget = myPosition.distanceTo(tacticalTarget);
                 var desiredDirection = new THREE.Vector3();
                 var targetSpeed = this.maxSpeed;
-                if (teamHasPossession) {
+                var tacticalDirection = new THREE.Vector3();
+
+                if (shouldChaseLooseBall && !ball.possessor) {
+                    // Only designated players contest loose balls; the rest hold tactical shape
+                    TeamTactics.directionToward(myPosition, ballPosition, desiredDirection);
+                    this.actionState = 'CHASING_LOOSE_BALL';
+                    targetSpeed *= this.role === 'DEFENDER' ? 0.85 : 1.0;
+                } else if (teamHasPossession) {
                     // --- ATTACKING LOGIC ---
                     if (this.hasBall) {
                         var goalX = this.teamId === 1 ? CONSTANTS.FIELD_WIDTH / 2 : -CONSTANTS.FIELD_WIDTH / 2;
@@ -100,6 +112,8 @@ var Player = /*#__PURE__*/ function() {
                                     score -= distToAlly * 0.1; // Penalize very long passes slightly
                                     // Bonus for being more central
                                     score += (CONSTANTS.FIELD_HEIGHT / 2 - Math.abs(ally.mesh.position.z)) * 0.05;
+                                    // Reward passes into wide channels to keep the team stretched
+                                    score += Math.abs(ally.mesh.position.z - myPosition.z) * 0.04;
                                     if (score > passTargetScore) {
                                         passTargetScore = score;
                                         potentialPassTarget = ally;
@@ -137,76 +151,41 @@ var Player = /*#__PURE__*/ function() {
                             }
                         }
                     } else {
-                        // Move towards ball if close, otherwise find space towards goal
-                        if (distanceToBall < CONSTANTS.SUPPORT_DISTANCE) {
-                            desiredDirection.subVectors(ballPosition, myPosition);
+                        // Off-ball attackers maintain width and depth using the tactical shape
+                        var supportBlend = 0;
+                        if (this.role !== 'DEFENDER' && distanceToBall < CONSTANTS.SUPPORT_DISTANCE) {
+                            supportBlend = this.role === 'FORWARD' ? 0.25 : 0.15;
+                        }
+
+                        if (supportBlend > 0) {
+                            var supportDirection = new THREE.Vector3();
+                            TeamTactics.directionToward(myPosition, ballPosition, supportDirection);
+                            TeamTactics.directionToward(myPosition, tacticalTarget, tacticalDirection);
+                            desiredDirection.copy(tacticalDirection).multiplyScalar(1 - supportBlend).addScaledVector(supportDirection, supportBlend);
                             if (desiredDirection.lengthSq() > 0.0001) {
                                 desiredDirection.normalize();
                             } else {
                                 desiredDirection.set(0, 0, 0);
                             }
-                            this.actionState = 'SUPPORTING';
+                            this.actionState = 'SUPPORTING_SHAPE';
+                            targetSpeed *= 0.85;
                         } else {
-                            // Move towards a position ahead of the ball carrier or towards goal
-                            var goalX1 = this.teamId === 1 ? CONSTANTS.FIELD_WIDTH / 2 : -CONSTANTS.FIELD_WIDTH / 2;
-                            // Target a point generally towards the opponent's goal
-                            var targetX = THREE.MathUtils.lerp(myPosition.x, goalX1, 0.2); // Move more decisively towards goal direction
-                            // Influence Z position: blend initial lane, ball's Z, and some variation
-                            // Blend formation lane with ball position so off-ball runners can reach the play
-                            var targetZ = THREE.MathUtils.lerp(this.initialPosition.z, ballPosition.z, 0.35);
-                            // Ensure the target is reasonably ahead if they are behind the ball
-                            if (this.teamId === 1 && targetX < ballPosition.x || this.teamId === 2 && targetX > ballPosition.x) {
-                                targetX = ballPosition.x + (this.teamId === 1 ? 5 : -5); // Get slightly ahead of the ball
-                            }
-                            // Move toward space ahead of play while drifting toward the ball's Z channel
-                            var spaceTarget = new THREE.Vector3(targetX, myPosition.y, targetZ);
-                            // Clamp X to field bounds (Z is fixed by lane)
-                            spaceTarget.x = THREE.MathUtils.clamp(spaceTarget.x, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2);
-                            desiredDirection.subVectors(spaceTarget, myPosition);
-                            if (desiredDirection.lengthSq() > 0.0001) {
-                                desiredDirection.normalize();
-                            } else {
-                                desiredDirection.set(0, 0, 0);
-                            }
-                            this.actionState = 'FINDING_SPACE';
-                            targetSpeed *= 0.7; // Move slower when finding space
+                            this.moveTowardTacticalPosition(myPosition, tacticalTarget, desiredDirection, distanceToTacticalTarget, 'ATTACKING_SHAPE');
+                            targetSpeed *= this.role === 'FORWARD' ? 0.95 : 0.75;
                         }
                     }
                 } else {
                     // --- DEFENDING LOGIC ---
-                    // Loose balls must be chased; holding a 5m defensive line leaves the ball uncontested
-                    if (!ball.possessor && distanceToBall < CONSTANTS.CHASE_LOOSE_BALL_RANGE) {
-                        desiredDirection.subVectors(ballPosition, myPosition);
-                        if (desiredDirection.lengthSq() > 0.0001) {
-                            desiredDirection.normalize();
-                        } else {
-                            desiredDirection.set(0, 0, 0);
-                        }
-                        this.actionState = 'CHASING_LOOSE_BALL';
-                    } else {
-                    // Move towards the ball, but maybe stay between ball and own goal
-                    var ownGoalPosition = new THREE.Vector3(this.teamId === 1 ? -CONSTANTS.FIELD_WIDTH / 2 : CONSTANTS.FIELD_WIDTH / 2, 0, 0);
-                    var vectorToGoal = new THREE.Vector3().subVectors(ownGoalPosition, ballPosition);
-                    var vectorToMe = new THREE.Vector3().subVectors(myPosition, ballPosition);
-                    // If I'm further from goal than the ball, move directly towards ball
-                    if (vectorToMe.lengthSq() > vectorToGoal.lengthSq()) {
-                        desiredDirection.subVectors(ballPosition, myPosition).normalize();
+                    var shouldPress = this.role === 'FORWARD' && phase === 'DEFEND' && distanceToBall < CONSTANTS.TACTICAL_PRESS_DISTANCE;
+                    if (shouldPress) {
+                        var pressTarget = ballPosition.clone();
+                        pressTarget.z = THREE.MathUtils.lerp(ballPosition.z, this.initialPosition.z, 0.5);
+                        TeamTactics.directionToward(myPosition, pressTarget, desiredDirection);
                         this.actionState = 'PRESSING';
+                        targetSpeed *= 0.9;
                     } else {
-                        // Try to get goal-side of the ball, considering initial Z-position
-                        var idealDefensivePos = ballPosition.clone().add(vectorToGoal.normalize().multiplyScalar(CONSTANTS.DEFENSIVE_DISTANCE));
-                        // Blend the ideal Z position with the player's initial Z position
-                        // This encourages players to stay roughly in their assigned vertical lane
-                        var targetZ1 = THREE.MathUtils.lerp(idealDefensivePos.z, this.initialPosition.z, CONSTANTS.DEFENSIVE_ZONE_STRENGTH // How strongly they stick to their zone (0=ignore zone, 1=always stay in zone)
-                        );
-                        var defensivePosition = new THREE.Vector3(idealDefensivePos.x, myPosition.y, targetZ1);
-                        // Clamp to field bounds
-                        defensivePosition.x = THREE.MathUtils.clamp(defensivePosition.x, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2);
-                        defensivePosition.z = THREE.MathUtils.clamp(defensivePosition.z, -CONSTANTS.FIELD_HEIGHT / 2, CONSTANTS.FIELD_HEIGHT / 2);
-                        desiredDirection.subVectors(defensivePosition, myPosition).normalize();
-                        this.actionState = 'DEFENDING_POSITION';
-                        targetSpeed *= 0.8;
-                    }
+                        this.moveTowardTacticalPosition(myPosition, tacticalTarget, desiredDirection, distanceToTacticalTarget, 'HOLDING_SHAPE');
+                        targetSpeed *= this.role === 'DEFENDER' ? 0.7 : 0.8;
                     }
                 }
                 // --- Movement ---
@@ -241,6 +220,13 @@ var Player = /*#__PURE__*/ function() {
                         _this.velocity.add(repulse);
                     }
                 });
+                opponents.forEach(function(opponent) {
+                    var dist = _this.mesh.position.distanceTo(opponent.mesh.position);
+                    if (dist < CONSTANTS.PLAYER_SEPARATION_DISTANCE * 0.8 && dist > 0) {
+                        var repulse = new THREE.Vector3().subVectors(_this.mesh.position, opponent.mesh.position).normalize().multiplyScalar(CONSTANTS.PLAYER_SEPARATION_FORCE * 0.5 * deltaTime);
+                        _this.velocity.add(repulse);
+                    }
+                });
                 // Apply position update
                 this.mesh.position.addScaledVector(this.velocity, deltaTime);
                 // Keep player on the field (simple clamp) - Y is fixed
@@ -269,6 +255,18 @@ var Player = /*#__PURE__*/ function() {
             //     this.velocity.add(repulsion);
             // });
             // Basic check for ball collision handled by Ball class now
+            }
+        },
+        {
+            key: "moveTowardTacticalPosition",
+            value: function moveTowardTacticalPosition(myPosition, tacticalTarget, desiredDirection, distanceToTacticalTarget, actionState) {
+                if (distanceToTacticalTarget < CONSTANTS.TACTICAL_HOLD_DISTANCE) {
+                    desiredDirection.set(0, 0, 0);
+                    this.actionState = actionState + '_HOLD';
+                    return;
+                }
+                TeamTactics.directionToward(myPosition, tacticalTarget, desiredDirection);
+                this.actionState = actionState;
             }
         },
         {

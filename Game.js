@@ -51,7 +51,7 @@ export class Game {
             this.gameObjects.push(player);
         });
 
-        this.resetToKickoff();
+        // Possession Indicator
         const indicatorGeometry = new THREE.RingGeometry(
             CONSTANTS.PLAYER_RADIUS * 1.2,
             CONSTANTS.PLAYER_RADIUS * 1.4,
