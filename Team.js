@@ -19,6 +19,7 @@ function _create_class(Constructor, protoProps, staticProps) {
 }
 import * as THREE from 'three';
 import { Player } from './Player.js';
+import { TeamTactics } from './TeamTactics.js';
 import * as CONSTANTS from './constants.js';
 var Team = /*#__PURE__*/ function() {
     "use strict";
@@ -45,6 +46,8 @@ var Team = /*#__PURE__*/ function() {
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8;
                     position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
                     var player = new Player(_this.id, _this.color, position, posData.role);
+                    // Store normalized formation offset for tactical positioning each frame
+                    player.formationOffset = new THREE.Vector3(posData.x, 0, posData.z);
                     _this.players.push(player);
                 });
                 if (this.players.length !== CONSTANTS.PLAYERS_PER_TEAM) {
@@ -56,10 +59,12 @@ var Team = /*#__PURE__*/ function() {
             // Note: Added 'game' parameter and 'originalDeltaTime' to pass down to players
             key: "update",
             value: function update(deltaTime, originalDeltaTime, ball, hasPossession, opponents, game) {
-                var allies = this.players;
+                // Compute team-wide tactical assignments before individual player decisions
+                var tactics = TeamTactics.compute(this, ball, hasPossession);
                 this.players.forEach(function(player) {
-                    // Pass 'game' and 'originalDeltaTime' down
-                    player.update(deltaTime, originalDeltaTime, ball, hasPossession, opponents, game);
+                    var tacticalTarget = tactics.targets.get(player);
+                    var shouldChaseLooseBall = tactics.chasers.has(player);
+                    player.update(deltaTime, originalDeltaTime, ball, hasPossession, opponents, game, tacticalTarget, shouldChaseLooseBall, tactics.phase);
                 });
             }
         },
@@ -76,6 +81,7 @@ var Team = /*#__PURE__*/ function() {
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8;
                     position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
                     if (_this.players[index]) {
+                        _this.players[index].formationOffset = new THREE.Vector3(posData.x, 0, posData.z);
                         _this.players[index].initialPosition.copy(position);
                         _this.players[index].resetPosition();
                     }
