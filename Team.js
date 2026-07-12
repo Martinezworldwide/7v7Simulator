@@ -20,6 +20,7 @@ function _create_class(Constructor, protoProps, staticProps) {
 import * as THREE from 'three';
 import { Player } from './Player.js';
 import { TeamTactics } from './TeamTactics.js';
+import { DEFAULT_TACTICAL_STYLE, getTacticalStyle } from './TacticalStyles.js';
 import * as CONSTANTS from './constants.js';
 var Team = /*#__PURE__*/ function() {
     "use strict";
@@ -31,6 +32,7 @@ var Team = /*#__PURE__*/ function() {
         this.players = [];
         this.formation = formation; // e.g., FORMATION_2_3_1
         this.homeTeam = homeTeam; // True = starts on left (-x), False = starts on right (+x)
+        this.tacticalStyleId = DEFAULT_TACTICAL_STYLE; // Active tactical preset for this team
         this.setupPlayers();
     }
     _create_class(Team, [
@@ -66,6 +68,18 @@ var Team = /*#__PURE__*/ function() {
                     var shouldChaseLooseBall = tactics.chasers.has(player);
                     player.update(deltaTime, originalDeltaTime, ball, hasPossession, opponents, game, tacticalTarget, shouldChaseLooseBall, tactics.phase);
                 });
+            }
+        },
+        {
+            key: "getTacticalStyleConfig",
+            value: function getTacticalStyleConfig() {
+                return getTacticalStyle(this.tacticalStyleId);
+            }
+        },
+        {
+            key: "setTacticalStyle",
+            value: function setTacticalStyle(styleId) {
+                this.tacticalStyleId = getTacticalStyle(styleId).id;
             }
         },
         {

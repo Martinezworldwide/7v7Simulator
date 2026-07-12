@@ -1,31 +1,11 @@
 import * as THREE from 'three';
 import * as CONSTANTS from './constants.js';
-
-// Role-based tactical offsets and shape parameters for realistic team play
-const ROLE_TACTICS = {
-    DEFENDER: {
-        attackDepth: -14,
-        defendDepth: -10,
-        widthScale: 1.0,
-        maxLooseBallChasers: 0
-    },
-    MIDFIELDER: {
-        attackDepth: 2,
-        defendDepth: -4,
-        widthScale: 1.1,
-        maxLooseBallChasers: 1
-    },
-    FORWARD: {
-        attackDepth: 14,
-        defendDepth: 6,
-        widthScale: 0.85,
-        maxLooseBallChasers: 1
-    }
-};
+import { getTacticalStyle } from './TacticalStyles.js';
 
 export class TeamTactics {
     // Compute tactical targets and loose-ball assignments for the whole team
     static compute(team, ball, hasPossession) {
+        const style = team.getTacticalStyleConfig();
         const ballPosition = ball.mesh.position;
         const attackDir = team.homeTeam ? 1 : -1;
         const ownGoalX = team.homeTeam ? -CONSTANTS.FIELD_WIDTH / 2 : CONSTANTS.FIELD_WIDTH / 2;
@@ -40,35 +20,36 @@ export class TeamTactics {
             phase = 'DEFEND';
         }
 
-        // Formation anchor shifts with the ball but stays compact when defending
+        // Formation anchor shifts with the ball and the selected tactical style
         let anchorX;
         if (phase === 'ATTACK') {
-            anchorX = ballPosition.x + attackDir * CONSTANTS.TACTICAL_ATTACK_PUSH;
+            anchorX = ballPosition.x + attackDir * style.attackPush;
         } else if (phase === 'DEFEND') {
             anchorX = THREE.MathUtils.lerp(
                 ballPosition.x - attackDir * CONSTANTS.DEFENSIVE_DISTANCE,
-                ownGoalX + attackDir * CONSTANTS.TACTICAL_DEFENSIVE_LINE,
-                CONSTANTS.TACTICAL_COMPACTNESS
+                ownGoalX + attackDir * style.defensiveLine,
+                style.compactness
             );
         } else {
             anchorX = THREE.MathUtils.lerp(
                 ballPosition.x,
-                ownGoalX + attackDir * CONSTANTS.TACTICAL_DEFENSIVE_LINE,
-                0.35
+                ownGoalX + attackDir * style.defensiveLine,
+                style.compactness * 0.75
             );
         }
 
-        const anchorZ = THREE.MathUtils.lerp(0, ballPosition.z, CONSTANTS.TACTICAL_VERTICAL_FOLLOW);
+        const anchorZ = THREE.MathUtils.lerp(0, ballPosition.z, style.verticalFollow);
         const targets = new Map();
         const chasers = new Set();
+        const roleDepths = phase === 'ATTACK' ? style.roleDepthAttack : style.roleDepthDefend;
 
         team.players.forEach((player) => {
-            const roleTactic = ROLE_TACTICS[player.role] || ROLE_TACTICS.MIDFIELDER;
-            const depth = phase === 'ATTACK' ? roleTactic.attackDepth : roleTactic.defendDepth;
+            const depth = roleDepths[player.role] ?? roleDepths.MIDFIELDER;
             const offset = player.formationOffset;
+            const roleWidthScale = player.role === 'FORWARD' ? style.widthScale * 0.9 : style.widthScale;
 
             const targetX = anchorX + attackDir * depth + offset.x * halfWidth * 0.45;
-            const targetZ = anchorZ + offset.z * halfHeight * roleTactic.widthScale;
+            const targetZ = anchorZ + offset.z * halfHeight * roleWidthScale;
 
             const tacticalTarget = new THREE.Vector3(
                 THREE.MathUtils.clamp(targetX, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2),
@@ -79,7 +60,7 @@ export class TeamTactics {
             targets.set(player, tacticalTarget);
         });
 
-        // Only assign a small number of role-appropriate players to chase loose balls
+        // Assign chasers based on tactical style (gegenpress swarms, low block stays disciplined)
         if (!ball.possessor) {
             const candidates = team.players
                 .map((player) => ({
@@ -90,12 +71,9 @@ export class TeamTactics {
                 .sort((a, b) => a.distance - b.distance);
 
             const ballIsSlow = ball.velocity.lengthSq() < CONSTANTS.TACTICAL_STATIONARY_BALL_SPEED_SQ;
-            const chaserLimit = ballIsSlow
-                ? CONSTANTS.TACTICAL_MAX_LOOSE_BALL_CHASERS + 1
-                : CONSTANTS.TACTICAL_MAX_LOOSE_BALL_CHASERS;
+            const chaserLimit = ballIsSlow ? style.maxChasers + 1 : style.maxChasers;
 
-            const roleOrder = ['MIDFIELDER', 'FORWARD', 'DEFENDER'];
-            roleOrder.forEach((role) => {
+            style.chaserRoles.forEach((role) => {
                 if (chasers.size >= chaserLimit) return;
                 const match = candidates.find((entry) => entry.player.role === role && !chasers.has(entry.player));
                 if (match) chasers.add(match.player);
@@ -118,7 +96,7 @@ export class TeamTactics {
             }
         }
 
-        return { phase, targets, chasers };
+        return { phase, style, targets, chasers };
     }
 
     // Move toward a tactical point with safe normalization
