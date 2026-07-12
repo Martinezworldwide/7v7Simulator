@@ -50,8 +50,6 @@ var Team = /*#__PURE__*/ function() {
                 if (this.players.length !== CONSTANTS.PLAYERS_PER_TEAM) {
                     console.warn("Team ".concat(this.id, " formation has ").concat(this.players.length, " players, expected ").concat(CONSTANTS.PLAYERS_PER_TEAM));
                 }
-                // Debug: log each player's initial position
-                this.players.forEach(p => console.log(`Player ${p.teamId}-${p.role} initialPosition: x=${p.initialPosition.x.toFixed(2)}, z=${p.initialPosition.z.toFixed(2)}`));
             }
         },
         {
