@@ -31,6 +31,7 @@ export var KICK_RANGE = 1.5; // How close player needs to be to ball to potentia
 export var SUPPORT_DISTANCE = 20.0; // How far attacking players look for ball
 export var DEFENSIVE_DISTANCE = 5.0; // How far behind ball defenders try to stay (ideal distance)
 export var DEFENSIVE_ZONE_STRENGTH = 0.4; // How much players stick to their initial Z-lane when defending (0-1)
+export var CHASE_LOOSE_BALL_RANGE = 35.0; // How far players will chase a loose ball to regain possession
 export var POSSESSION_RANGE = PLAYER_RADIUS + BALL_RADIUS + 0.1; // Distance to gain possession
 export var PASS_MAX_RANGE = 35.0; // Max distance to look for a pass target
 export var PASS_MIN_RANGE = 4.0; // Min distance to attempt a pass (avoid tiny passes)

@@ -139,7 +139,12 @@ var Player = /*#__PURE__*/ function() {
                     } else {
                         // Move towards ball if close, otherwise find space towards goal
                         if (distanceToBall < CONSTANTS.SUPPORT_DISTANCE) {
-                            desiredDirection.subVectors(ballPosition, myPosition).normalize();
+                            desiredDirection.subVectors(ballPosition, myPosition);
+                            if (desiredDirection.lengthSq() > 0.0001) {
+                                desiredDirection.normalize();
+                            } else {
+                                desiredDirection.set(0, 0, 0);
+                            }
                             this.actionState = 'SUPPORTING';
                         } else {
                             // Move towards a position ahead of the ball carrier or towards goal
@@ -147,30 +152,38 @@ var Player = /*#__PURE__*/ function() {
                             // Target a point generally towards the opponent's goal
                             var targetX = THREE.MathUtils.lerp(myPosition.x, goalX1, 0.2); // Move more decisively towards goal direction
                             // Influence Z position: blend initial lane, ball's Z, and some variation
-                            var targetZ = this.initialPosition.z; // Start with their initial lane
-                            console.log(`Player ${this.teamId}-${this.role} initialPosition.z: ${this.initialPosition.z}`);
-                            // Add some strategic lateral variation based on role or randomness
-                            var lateralSpread = this.role === 'FORWARD' ? 5 : 10; // Forwards can be more direct, mids spread more
-                            // Keep players roughly in their initial Z-lane (optionally add small per-frame jitter)
-                            // targetZ remains this.initialPosition.z
-                            // If you want small variation each frame, uncomment below:
-                            // targetZ += (Math.random() - 0.5) * lateralSpread;
-                            console.log(`Player ${this.teamId}-${this.role} calculated targetZ: ${targetZ}`);
+                            // Blend formation lane with ball position so off-ball runners can reach the play
+                            var targetZ = THREE.MathUtils.lerp(this.initialPosition.z, ballPosition.z, 0.35);
                             // Ensure the target is reasonably ahead if they are behind the ball
                             if (this.teamId === 1 && targetX < ballPosition.x || this.teamId === 2 && targetX > ballPosition.x) {
                                 targetX = ballPosition.x + (this.teamId === 1 ? 5 : -5); // Get slightly ahead of the ball
                             }
-                            // Enforce static Z-lane: use initialPosition.z to keep formation lanes
-                            var spaceTarget = new THREE.Vector3(targetX, myPosition.y, this.initialPosition.z);
+                            // Move toward space ahead of play while drifting toward the ball's Z channel
+                            var spaceTarget = new THREE.Vector3(targetX, myPosition.y, targetZ);
                             // Clamp X to field bounds (Z is fixed by lane)
                             spaceTarget.x = THREE.MathUtils.clamp(spaceTarget.x, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2);
-                            desiredDirection.subVectors(spaceTarget, myPosition).normalize();
+                            desiredDirection.subVectors(spaceTarget, myPosition);
+                            if (desiredDirection.lengthSq() > 0.0001) {
+                                desiredDirection.normalize();
+                            } else {
+                                desiredDirection.set(0, 0, 0);
+                            }
                             this.actionState = 'FINDING_SPACE';
                             targetSpeed *= 0.7; // Move slower when finding space
                         }
                     }
                 } else {
                     // --- DEFENDING LOGIC ---
+                    // Loose balls must be chased; holding a 5m defensive line leaves the ball uncontested
+                    if (!ball.possessor && distanceToBall < CONSTANTS.CHASE_LOOSE_BALL_RANGE) {
+                        desiredDirection.subVectors(ballPosition, myPosition);
+                        if (desiredDirection.lengthSq() > 0.0001) {
+                            desiredDirection.normalize();
+                        } else {
+                            desiredDirection.set(0, 0, 0);
+                        }
+                        this.actionState = 'CHASING_LOOSE_BALL';
+                    } else {
                     // Move towards the ball, but maybe stay between ball and own goal
                     var ownGoalPosition = new THREE.Vector3(this.teamId === 1 ? -CONSTANTS.FIELD_WIDTH / 2 : CONSTANTS.FIELD_WIDTH / 2, 0, 0);
                     var vectorToGoal = new THREE.Vector3().subVectors(ownGoalPosition, ballPosition);
@@ -193,6 +206,7 @@ var Player = /*#__PURE__*/ function() {
                         desiredDirection.subVectors(defensivePosition, myPosition).normalize();
                         this.actionState = 'DEFENDING_POSITION';
                         targetSpeed *= 0.8;
+                    }
                     }
                 }
                 // --- Movement ---
@@ -233,8 +247,6 @@ var Player = /*#__PURE__*/ function() {
                 this.mesh.position.x = THREE.MathUtils.clamp(this.mesh.position.x, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2);
                 this.mesh.position.z = THREE.MathUtils.clamp(this.mesh.position.z, -CONSTANTS.FIELD_HEIGHT / 2, CONSTANTS.FIELD_HEIGHT / 2);
                 this.mesh.position.y = 0; // Ensure player stays on ground plane
-                // Debug: Log mesh Z position every frame
-                console.log(`Player ${this.teamId}-${this.role} mesh.position.z: ${this.mesh.position.z}`);
                 // Smoothly rotate player to face movement direction
                 if (this.velocity.lengthSq() > 0.01) {
                     var targetDirection = this.velocity.clone().normalize();

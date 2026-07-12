@@ -43,8 +43,16 @@ export class Ball {
             this.mesh.position.y = CONSTANTS.BALL_RADIUS;
             
             // Basic collision with field boundaries (simple bounce)
-            if (Math.abs(this.mesh.position.z) > CONSTANTS.FIELD_HEIGHT / 2 - CONSTANTS.BALL_RADIUS) {
-                this.mesh.position.z = Math.sign(this.mesh.position.z) * (CONSTANTS.FIELD_HEIGHT / 2 - CONSTANTS.BALL_RADIUS);
+            const halfFieldWidth = CONSTANTS.FIELD_WIDTH / 2 - CONSTANTS.BALL_RADIUS;
+            const halfFieldHeight = CONSTANTS.FIELD_HEIGHT / 2 - CONSTANTS.BALL_RADIUS;
+
+            if (Math.abs(this.mesh.position.x) > halfFieldWidth) {
+                this.mesh.position.x = Math.sign(this.mesh.position.x) * halfFieldWidth;
+                this.velocity.x *= -0.7; // Lose some energy on bounce
+            }
+
+            if (Math.abs(this.mesh.position.z) > halfFieldHeight) {
+                this.mesh.position.z = Math.sign(this.mesh.position.z) * halfFieldHeight;
                 this.velocity.z *= -0.7; // Lose some energy on bounce
             }
             
