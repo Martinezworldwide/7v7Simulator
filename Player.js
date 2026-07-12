@@ -77,6 +77,8 @@ var Player = /*#__PURE__*/ function() {
                 var myPosition = this.mesh.position;
                 // Teammate reference for separation forces
                 var teammates = this.teamId === 1 ? game.team1.players : game.team2.players;
+                var team = this.teamId === 1 ? game.team1 : game.team2;
+                var style = team.getTacticalStyleConfig();
                 // --- Basic AI Decision Making ---
                 var distanceToBall = myPosition.distanceTo(ballPosition);
                 var distanceToTacticalTarget = myPosition.distanceTo(tacticalTarget);
@@ -102,46 +104,50 @@ var Player = /*#__PURE__*/ function() {
                             if (ally === _this) return;
                             var vectorToAlly = new THREE.Vector3().subVectors(ally.mesh.position, myPosition);
                             var distToAlly = vectorToAlly.length();
-                            if (distToAlly < CONSTANTS.PASS_MAX_RANGE && distToAlly > CONSTANTS.PASS_MIN_RANGE) {
+                            var maxPassRange = CONSTANTS.PASS_MAX_RANGE * (style.passStrengthMod > 1.2 ? 1.15 : 1.0);
+                            if (distToAlly < maxPassRange && distToAlly > CONSTANTS.PASS_MIN_RANGE) {
                                 var myDistToGoalX = Math.abs(goalX - myPosition.x);
                                 var allyDistToGoalX = Math.abs(goalX - ally.mesh.position.x);
                                 // Check if ally is generally ahead
                                 var isAllyAhead = _this.teamId === 1 && ally.mesh.position.x > myPosition.x || _this.teamId === 2 && ally.mesh.position.x < myPosition.x;
-                                if (isAllyAhead && allyDistToGoalX < myDistToGoalX) {
-                                    var score = myDistToGoalX - allyDistToGoalX; // How much closer to goal
-                                    score -= distToAlly * 0.1; // Penalize very long passes slightly
-                                    // Bonus for being more central
-                                    score += (CONSTANTS.FIELD_HEIGHT / 2 - Math.abs(ally.mesh.position.z)) * 0.05;
-                                    // Reward passes into wide channels to keep the team stretched
-                                    score += Math.abs(ally.mesh.position.z - myPosition.z) * 0.04;
+                                var allowBackwardPass = style.passCentralBonus > 1.5;
+                                if ((isAllyAhead || allowBackwardPass) && (isAllyAhead ? allyDistToGoalX < myDistToGoalX : true)) {
+                                    var score = isAllyAhead ? myDistToGoalX - allyDistToGoalX : 2;
+                                    score -= distToAlly * 0.1 * (style.passStrengthMod > 1.2 ? 0.6 : 1.0);
+                                    // Tactical passing preferences per team style
+                                    score += (CONSTANTS.FIELD_HEIGHT / 2 - Math.abs(ally.mesh.position.z)) * 0.05 * style.passCentralBonus;
+                                    score += Math.abs(ally.mesh.position.z - myPosition.z) * 0.04 * style.passWidthBonus;
+                                    score += Math.abs(ally.mesh.position.x - myPosition.x) * 0.06 * style.passVerticalBonus;
                                     if (score > passTargetScore) {
                                         passTargetScore = score;
                                         potentialPassTarget = ally;
-                                        distToPotentialPassTarget = distToAlly; // Store the distance to this specific ally
+                                        distToPotentialPassTarget = distToAlly;
                                     }
                                 }
                             }
                         });
                         var closestOpponentDist = this.getClosestOpponentDistance(opponents);
-                        var shouldAttemptPass = potentialPassTarget && (Math.random() < CONSTANTS.PASS_PROBABILITY || closestOpponentDist < CONSTANTS.PASS_PRESSURE_DISTANCE);
+                        var passChance = CONSTANTS.PASS_PROBABILITY * style.passProbabilityMod;
+                        var shouldAttemptPass = potentialPassTarget && (Math.random() < passChance || closestOpponentDist < CONSTANTS.PASS_PRESSURE_DISTANCE * (style.passProbabilityMod > 1.5 ? 1.3 : 1.0));
                         if (shouldAttemptPass) {
                             var passDirection = new THREE.Vector3().subVectors(potentialPassTarget.mesh.position, myPosition);
                             // Add a slight lead to the pass target
                             var leadFactor = THREE.MathUtils.clamp(passDirection.length() / CONSTANTS.PASS_MAX_RANGE, 0.1, 0.5);
                             passDirection.addScaledVector(potentialPassTarget.velocity, leadFactor); // Simple lead pass
                             passDirection.normalize();
-                            var passStrength = CONSTANTS.PASS_STRENGTH * THREE.MathUtils.clamp(distToPotentialPassTarget / CONSTANTS.PASS_MAX_RANGE, 0.7, 1.2);
+                            var passStrength = CONSTANTS.PASS_STRENGTH * style.passStrengthMod * THREE.MathUtils.clamp(distToPotentialPassTarget / CONSTANTS.PASS_MAX_RANGE, 0.7, 1.2);
                             var kickVector = passDirection.multiplyScalar(passStrength);
                             this.actionState = 'PASSING';
                             this.kickAimDirection = kickVector.clone().normalize();
                             this.kickAimStrength = kickVector.length();
                             this.tryKick(ball, kickVector);
-                        } else {
-                            // Dribble or Shoot
+                        } else if (Math.random() < style.dribbleBias * 0.15 || style.dribbleBias >= 1.2) {
+                            // Dribble or Shoot based on tactical style
                             desiredDirection = goalDirection;
                             this.actionState = 'DRIBBLE';
-                            var distToGoal = myPosition.distanceTo(new THREE.Vector3(goalX, 0, myPosition.z)); // Use X-distance for shooting range
-                            if (closestOpponentDist < CONSTANTS.KICK_RANGE * 2.0 && distToGoal < CONSTANTS.SHOOTING_RANGE) {
+                            var distToGoal = myPosition.distanceTo(new THREE.Vector3(goalX, 0, myPosition.z));
+                            var shootRange = CONSTANTS.SHOOTING_RANGE * style.shootAggression;
+                            if (closestOpponentDist < CONSTANTS.KICK_RANGE * 2.0 && distToGoal < shootRange) {
                                 var shootStrength = CONSTANTS.MAX_KICK_SPEED * THREE.MathUtils.lerp(0.6, 1.0, (CONSTANTS.SHOOTING_RANGE - distToGoal) / CONSTANTS.SHOOTING_RANGE);
                                 var kickVector1 = goalDirection.clone().multiplyScalar(shootStrength);
                                 this.actionState = 'SHOOTING';
@@ -149,12 +155,22 @@ var Player = /*#__PURE__*/ function() {
                                 this.kickAimStrength = kickVector1.length();
                                 this.tryKick(ball, kickVector1);
                             }
+                        } else if (potentialPassTarget) {
+                            // Possession styles recycle the ball and probe for a better passing lane
+                            desiredDirection = goalDirection;
+                            this.actionState = 'HOLDING_BALL';
+                            targetSpeed *= 0.35 * style.supportBlendMod;
+                        } else {
+                            desiredDirection = goalDirection;
+                            this.actionState = 'DRIBBLE';
+                            targetSpeed *= 0.7;
                         }
                     } else {
                         // Off-ball attackers maintain width and depth using the tactical shape
                         var supportBlend = 0;
                         if (this.role !== 'DEFENDER' && distanceToBall < CONSTANTS.SUPPORT_DISTANCE) {
-                            supportBlend = this.role === 'FORWARD' ? 0.25 : 0.15;
+                            var baseBlend = this.role === 'FORWARD' ? 0.25 : 0.15;
+                            supportBlend = baseBlend * style.supportBlendMod;
                         }
 
                         if (supportBlend > 0) {
@@ -176,7 +192,7 @@ var Player = /*#__PURE__*/ function() {
                     }
                 } else {
                     // --- DEFENDING LOGIC ---
-                    var shouldPress = this.role === 'FORWARD' && phase === 'DEFEND' && distanceToBall < CONSTANTS.TACTICAL_PRESS_DISTANCE;
+                    var shouldPress = style.pressRoles.indexOf(this.role) !== -1 && phase === 'DEFEND' && distanceToBall < style.pressDistance;
                     if (shouldPress) {
                         var pressTarget = ballPosition.clone();
                         pressTarget.z = THREE.MathUtils.lerp(ballPosition.z, this.initialPosition.z, 0.5);
