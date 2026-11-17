@@ -1,6 +1,6 @@
 // Field Dimensions
-export var FIELD_WIDTH = 68; // meters (reduced slightly for better viewing)
-export var FIELD_HEIGHT = 105; // meters (length)
+export var FIELD_WIDTH = 105; // meters (length, goal-to-goal, X axis)
+export var FIELD_HEIGHT = 68; // meters (width, sideline-to-sideline, Z axis)
 export var GOAL_WIDTH = 7.32 * 1.5; // Scaled for visibility
 export var GOAL_HEIGHT = 2.44 * 1.5; // Scaled for visibility
 export var GOAL_DEPTH = 2;
@@ -8,7 +8,7 @@ export var CENTER_CIRCLE_RADIUS = 9.15;
 // Player Properties
 export var PLAYER_RADIUS = 0.5;
 export var PLAYER_HEIGHT = 1.8;
-export var PLAYER_MAX_SPEED = 7.0; // m/s (adjust for game speed)
+export var PLAYER_MAX_SPEED = 8.5; // m/s (adjust for game speed)
 export var PLAYER_ACCELERATION = 15.0; // m/s^2 (how quickly players reach max speed)
 export var PLAYER_DAMPING = 3.0; // How quickly players slow down when not accelerating
 export var PLAYERS_PER_TEAM = 7; // 7v7
@@ -17,10 +17,10 @@ export var PLAYER_SEPARATION_FORCE = 8.0; // How strongly they push apart
 export var PLAYER_TURN_SPEED = 5.0; // Radians per second (how fast they turn)
 // Ball Properties
 export var BALL_RADIUS = 0.22;
-export var BALL_FRICTION = 0.9; // Drag factor per second
+export var BALL_FRICTION = 0.5; // Drag factor per second (0.9 made 35m shots die ~10m short of goal)
 export var BALL_COLOR = 0xffffff; // White
 export var MAX_KICK_SPEED = 25.0; // m/s
-export var PASS_STRENGTH = 15.0; // Speed for a basic pass/kick
+export var PASS_STRENGTH = 18.0; // Speed for a basic pass/kick
 export var INITIAL_KICK_STRENGTH = 10.0; // Speed for kickoff
 export var TACKLE_BOUNCE_SPEED = 5.0; // Speed ball bounces off a tackler
 // Team Properties
@@ -43,9 +43,9 @@ export var TACTICAL_PRESS_DISTANCE = 16.0; // How close forwards must be before 
 export var POSSESSION_RANGE = PLAYER_RADIUS + BALL_RADIUS + 0.1; // Distance to gain possession
 export var PASS_MAX_RANGE = 35.0; // Max distance to look for a pass target
 export var PASS_MIN_RANGE = 4.0; // Min distance to attempt a pass (avoid tiny passes)
-export var PASS_PROBABILITY = 0.08; // Base chance to pass per update frame when a target is open
+export var PASS_PROBABILITY = 0.03; // Base chance to pass per update frame when a target is open
 export var PASS_PRESSURE_DISTANCE = 7.0; // If opponent is closer than this, more likely to pass (increased slightly)
-export var SHOOTING_RANGE = 35.0; // Max distance from goal center X-line to attempt a shot
+export var SHOOTING_RANGE = 26.0; // Max distance from goal center X-line to attempt a shot
 // Visual Indicators
 export var AIM_INDICATOR_COLOR = 0xffffff; // White
 export var AIM_INDICATOR_LENGTH_SCALE = 0.25; // Multiplier for kick strength to get arrow length
@@ -58,6 +58,7 @@ export var GAME_STATE = {
     KICKOFF: 'KICKOFF',
     PLAYING: 'PLAYING',
     GOAL_SCORED: 'GOAL_SCORED',
+    SET_PIECE: 'SET_PIECE',
     PAUSED: 'PAUSED'
 };
 // Colors
@@ -109,11 +110,13 @@ export var FORMATION_2_3_1 = {
             z: -0.2,
             role: 'FORWARD'
         },
+        // Goalkeeper (7v7 is GK + 2-3-1 outfield; this roster previously had
+        // seven outfield players and no keeper, so every on-target shot scored)
         {
-            x: 0.3,
+            x: -0.92,
             y: 0,
-            z: 0.2,
-            role: 'FORWARD'
+            z: 0.0,
+            role: 'GOALKEEPER'
         }
     ]
 }; // Add other formations here if needed later

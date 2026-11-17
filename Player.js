@@ -42,6 +42,7 @@ var Player = /*#__PURE__*/ function() {
         this.hasBall = false;
         this.actionState = 'IDLE'; // e.g., IDLE, MOVING_TO_BALL, SUPPORTING, DEFENDING
         this.maxSpeed = CONSTANTS.PLAYER_MAX_SPEED * (Math.random() * 0.4 + 0.8); // Slight variation
+        this.stamina = 1; // 1 = fresh, drains while sprinting, recovers while jogging
         this.kickAimDirection = null; // For aim indicator
         this.kickAimStrength = 0; // For aim indicator length
     }
@@ -71,6 +72,7 @@ var Player = /*#__PURE__*/ function() {
                     this.actionState = 'IDLE'; // Simple transition for now
                 }
                 // Reset aim details at the start of each update. They'll be set if a kick is decided this frame.
+                if (!this.hasBall) this.ballControlTime = 0;
                 this.kickAimDirection = null;
                 this.kickAimStrength = 0;
                 var ballPosition = ball.mesh.position;
@@ -86,7 +88,42 @@ var Player = /*#__PURE__*/ function() {
                 var targetSpeed = this.maxSpeed;
                 var tacticalDirection = new THREE.Vector3();
 
-                if (shouldChaseLooseBall && !ball.possessor) {
+                if (this.role === 'GOALKEEPER') {
+                    // --- GOALKEEPER LOGIC ---
+                    var ownGoalX = this.teamId === 1 ? -CONSTANTS.FIELD_WIDTH / 2 : CONSTANTS.FIELD_WIDTH / 2;
+                    var oppGoalX = -ownGoalX;
+                    if (this.hasBall) {
+                        // Clear it long toward the opponent's half once controlled
+                        this.ballControlTime = (this.ballControlTime || 0) + deltaTime;
+                        desiredDirection.set(0, 0, 0);
+                        if (this.ballControlTime > 0.5) {
+                            var clearTarget = new THREE.Vector3(oppGoalX, 0, (myPosition.z >= 0 ? -1 : 1) * CONSTANTS.FIELD_HEIGHT * 0.25);
+                            var clearVec = new THREE.Vector3().subVectors(clearTarget, myPosition).normalize().multiplyScalar(CONSTANTS.MAX_KICK_SPEED * 0.85);
+                            this.actionState = 'CLEARING';
+                            this.kickAimDirection = clearVec.clone().normalize();
+                            this.kickAimStrength = clearVec.length();
+                            this.tryKick(ball, clearVec);
+                        } else {
+                            this.actionState = 'GK_HOLDING';
+                        }
+                    } else {
+                        var guardX = ownGoalX + (this.teamId === 1 ? 2.5 : -2.5);
+                        var guardZ = THREE.MathUtils.clamp(ballPosition.z * 0.9, -CONSTANTS.GOAL_WIDTH / 2 - 1, CONSTANTS.GOAL_WIDTH / 2 + 1);
+                        var guardPos = new THREE.Vector3(guardX, 0, guardZ);
+                        var ballNearGoal = Math.abs(ballPosition.x - ownGoalX) < 14;
+                        if (!ball.possessor && ballNearGoal && distanceToBall < 9) {
+                            TeamTactics.directionToward(myPosition, ballPosition, desiredDirection);
+                            this.actionState = 'GK_RUSHING';
+                        } else if (myPosition.distanceTo(guardPos) > 0.4) {
+                            TeamTactics.directionToward(myPosition, guardPos, desiredDirection);
+                            this.actionState = 'GK_GUARDING';
+                            targetSpeed *= 0.8;
+                        } else {
+                            desiredDirection.set(0, 0, 0);
+                            this.actionState = 'GK_GUARDING';
+                        }
+                    }
+                } else if (shouldChaseLooseBall && !ball.possessor) {
                     // Only designated players contest loose balls; the rest hold tactical shape
                     TeamTactics.directionToward(myPosition, ballPosition, desiredDirection);
                     this.actionState = 'CHASING_LOOSE_BALL';
@@ -94,17 +131,37 @@ var Player = /*#__PURE__*/ function() {
                 } else if (teamHasPossession) {
                     // --- ATTACKING LOGIC ---
                     if (this.hasBall) {
+                        // A player must control the ball briefly before kicking it.
+                        // Without this, pressure passing fired every frame and the
+                        // match degenerated into midfield pinball that never attacked.
+                        if (!this.ballControlTime) {
+                            // New possession: roll how long this player will carry
+                            // the ball before looking to pass (shots come sooner)
+                            this.decisionTime = 1.2 + Math.random() * 1.6;
+                        }
+                        this.ballControlTime = (this.ballControlTime || 0) + deltaTime;
+                        var canKick = this.ballControlTime > this.decisionTime;
+                        var canShoot = this.ballControlTime > 0.6;
                         var goalX = this.teamId === 1 ? CONSTANTS.FIELD_WIDTH / 2 : -CONSTANTS.FIELD_WIDTH / 2;
                         var ownGoalX = this.teamId === 1 ? -CONSTANTS.FIELD_WIDTH / 2 : CONSTANTS.FIELD_WIDTH / 2;
                         var goalDirection = new THREE.Vector3(goalX, 0, 0).sub(myPosition).normalize();
                         var potentialPassTarget = null;
                         var distToPotentialPassTarget = Infinity; // Initialize with a high value
                         var passTargetScore = -Infinity;
+                        // Offside line from the second-last opponent; a teammate beyond
+                        // it (and beyond the ball) cannot legally receive the pass
+                        var oppXs = opponents.map(function(o) { return o.mesh.position.x; }).sort(function(a, b) { return a - b; });
+                        var offsideLineX = _this.teamId === 1 ? oppXs[oppXs.length - 2] : oppXs[1];
+                        var isOffsidePosition = function(ally) {
+                            if (_this.teamId === 1) return ally.mesh.position.x > Math.max(offsideLineX, myPosition.x) + 0.3;
+                            return ally.mesh.position.x < Math.min(offsideLineX, myPosition.x) - 0.3;
+                        };
                         teammates.forEach(function(ally) {
                             if (ally === _this) return;
                             var vectorToAlly = new THREE.Vector3().subVectors(ally.mesh.position, myPosition);
                             var distToAlly = vectorToAlly.length();
                             var maxPassRange = CONSTANTS.PASS_MAX_RANGE * (style.passStrengthMod > 1.2 ? 1.15 : 1.0);
+                            if (isOffsidePosition(ally)) return; // Never pass to an offside teammate
                             if (distToAlly < maxPassRange && distToAlly > CONSTANTS.PASS_MIN_RANGE) {
                                 var myDistToGoalX = Math.abs(goalX - myPosition.x);
                                 var allyDistToGoalX = Math.abs(goalX - ally.mesh.position.x);
@@ -118,6 +175,21 @@ var Player = /*#__PURE__*/ function() {
                                     score += (CONSTANTS.FIELD_HEIGHT / 2 - Math.abs(ally.mesh.position.z)) * 0.05 * style.passCentralBonus;
                                     score += Math.abs(ally.mesh.position.z - myPosition.z) * 0.04 * style.passWidthBonus;
                                     score += Math.abs(ally.mesh.position.x - myPosition.x) * 0.06 * style.passVerticalBonus;
+                                    // Space-based value: reward receivers in open space
+                                    // (real teams play into the free man) and punish lanes
+                                    // an opponent can step into
+                                    var allySpace = Infinity;
+                                    var laneRisk = Infinity;
+                                    var laneMidX = (ally.mesh.position.x + myPosition.x) / 2;
+                                    var laneMidZ = (ally.mesh.position.z + myPosition.z) / 2;
+                                    opponents.forEach(function(opp) {
+                                        var dAlly = opp.mesh.position.distanceTo(ally.mesh.position);
+                                        if (dAlly < allySpace) allySpace = dAlly;
+                                        var dLane = Math.hypot(opp.mesh.position.x - laneMidX, opp.mesh.position.z - laneMidZ);
+                                        if (dLane < laneRisk) laneRisk = dLane;
+                                    });
+                                    score += Math.min(allySpace, 15) * 0.35;
+                                    if (laneRisk < 2.5) score -= 6;
                                     if (score > passTargetScore) {
                                         passTargetScore = score;
                                         potentialPassTarget = ally;
@@ -126,9 +198,24 @@ var Player = /*#__PURE__*/ function() {
                                 }
                             }
                         });
+                        if (!potentialPassTarget) {
+                            // No teammate ahead: recycle to the nearest teammate in any
+                            // direction instead of dribbling into the boundary forever
+                            var recycleDist = Infinity;
+                            teammates.forEach(function(ally) {
+                                if (ally === _this) return;
+                                if (isOffsidePosition(ally)) return;
+                                var d = myPosition.distanceTo(ally.mesh.position);
+                                if (d > CONSTANTS.PASS_MIN_RANGE * 0.7 && d < CONSTANTS.PASS_MAX_RANGE && d < recycleDist) {
+                                    recycleDist = d;
+                                    potentialPassTarget = ally;
+                                    distToPotentialPassTarget = d;
+                                }
+                            });
+                        }
                         var closestOpponentDist = this.getClosestOpponentDistance(opponents);
                         var passChance = CONSTANTS.PASS_PROBABILITY * style.passProbabilityMod;
-                        var shouldAttemptPass = potentialPassTarget && (Math.random() < passChance || closestOpponentDist < CONSTANTS.PASS_PRESSURE_DISTANCE * (style.passProbabilityMod > 1.5 ? 1.3 : 1.0));
+                        var shouldAttemptPass = canKick && potentialPassTarget && (Math.random() < passChance || closestOpponentDist < CONSTANTS.PASS_PRESSURE_DISTANCE * (style.passProbabilityMod > 1.5 ? 1.3 : 1.0));
                         if (shouldAttemptPass) {
                             var passDirection = new THREE.Vector3().subVectors(potentialPassTarget.mesh.position, myPosition);
                             // Add a slight lead to the pass target
@@ -145,11 +232,13 @@ var Player = /*#__PURE__*/ function() {
                             // Dribble or Shoot based on tactical style
                             desiredDirection = goalDirection;
                             this.actionState = 'DRIBBLE';
-                            var distToGoal = myPosition.distanceTo(new THREE.Vector3(goalX, 0, myPosition.z));
+                            var distToGoal = myPosition.distanceTo(new THREE.Vector3(goalX, 0, 0));
                             var shootRange = CONSTANTS.SHOOTING_RANGE * style.shootAggression;
-                            if (closestOpponentDist < CONSTANTS.KICK_RANGE * 2.0 && distToGoal < shootRange) {
-                                var shootStrength = CONSTANTS.MAX_KICK_SPEED * THREE.MathUtils.lerp(0.6, 1.0, (CONSTANTS.SHOOTING_RANGE - distToGoal) / CONSTANTS.SHOOTING_RANGE);
-                                var kickVector1 = goalDirection.clone().multiplyScalar(shootStrength);
+                            if (canShoot && distToGoal < shootRange && (Math.random() < 0.4 || closestOpponentDist < CONSTANTS.PASS_PRESSURE_DISTANCE)) {
+                                var shootStrength = CONSTANTS.MAX_KICK_SPEED * THREE.MathUtils.lerp(0.8, 1.0, 1.0 - distToGoal / shootRange);
+                                // Aim at the far corner, not at the keeper
+                                var aimZ = (myPosition.z >= 0 ? -1 : 1) * CONSTANTS.GOAL_WIDTH * 0.32;
+                                var kickVector1 = new THREE.Vector3(goalX, 0, aimZ).sub(myPosition).normalize().multiplyScalar(shootStrength);
                                 this.actionState = 'SHOOTING';
                                 this.kickAimDirection = kickVector1.clone().normalize();
                                 this.kickAimStrength = kickVector1.length();
@@ -159,7 +248,7 @@ var Player = /*#__PURE__*/ function() {
                             // Possession styles recycle the ball and probe for a better passing lane
                             desiredDirection = goalDirection;
                             this.actionState = 'HOLDING_BALL';
-                            targetSpeed *= 0.35 * style.supportBlendMod;
+                            targetSpeed *= 0.85 * style.supportBlendMod;
                         } else {
                             desiredDirection = goalDirection;
                             this.actionState = 'DRIBBLE';
@@ -175,7 +264,13 @@ var Player = /*#__PURE__*/ function() {
 
                         if (supportBlend > 0) {
                             var supportDirection = new THREE.Vector3();
-                            TeamTactics.directionToward(myPosition, ballPosition, supportDirection);
+                            var supportTarget = ballPosition;
+                            if (this.role === 'FORWARD') {
+                                // Run in behind: aim ahead of the ball toward goal
+                                var attackDirX = this.teamId === 1 ? 1 : -1;
+                                supportTarget = new THREE.Vector3(ballPosition.x + attackDirX * 12, 0, ballPosition.z * 0.5);
+                            }
+                            TeamTactics.directionToward(myPosition, supportTarget, supportDirection);
                             TeamTactics.directionToward(myPosition, tacticalTarget, tacticalDirection);
                             desiredDirection.copy(tacticalDirection).multiplyScalar(1 - supportBlend).addScaledVector(supportDirection, supportBlend);
                             if (desiredDirection.lengthSq() > 0.0001) {
@@ -205,6 +300,15 @@ var Player = /*#__PURE__*/ function() {
                     }
                 }
                 // --- Movement ---
+                // Stamina: sprinting drains the tank, jogging recovers it, and a
+                // tired player's top speed drops - late-game legs are real
+                var currentSpeed = this.velocity.length();
+                if (currentSpeed > this.maxSpeed * 0.75) {
+                    this.stamina = Math.max(0.35, this.stamina - 0.012 * deltaTime);
+                } else if (currentSpeed < this.maxSpeed * 0.4) {
+                    this.stamina = Math.min(1, this.stamina + 0.02 * deltaTime);
+                }
+                targetSpeed *= 0.72 + 0.28 * this.stamina;
                 // Apply steering behavior (simplified)
                 // Calculate desired velocity
                 var desiredVelocity = desiredDirection.multiplyScalar(targetSpeed);

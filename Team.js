@@ -49,7 +49,7 @@ var Team = /*#__PURE__*/ function() {
                     position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
                     var player = new Player(_this.id, _this.color, position, posData.role);
                     // Store normalized formation offset for tactical positioning each frame
-                    player.formationOffset = new THREE.Vector3(posData.x, 0, posData.z);
+                    player.formationOffset = new THREE.Vector3(_this.homeTeam ? posData.x : -posData.x, 0, posData.z);
                     _this.players.push(player);
                 });
                 if (this.players.length !== CONSTANTS.PLAYERS_PER_TEAM) {
@@ -62,7 +62,7 @@ var Team = /*#__PURE__*/ function() {
             key: "update",
             value: function update(deltaTime, originalDeltaTime, ball, hasPossession, opponents, game) {
                 // Compute team-wide tactical assignments before individual player decisions
-                var tactics = TeamTactics.compute(this, ball, hasPossession);
+                var tactics = TeamTactics.compute(this, ball, hasPossession, opponents);
                 this.players.forEach(function(player) {
                     var tacticalTarget = tactics.targets.get(player);
                     var shouldChaseLooseBall = tactics.chasers.has(player);
@@ -94,8 +94,12 @@ var Team = /*#__PURE__*/ function() {
                     var position = new THREE.Vector3(initialX, 0, initialZ);
                     position.x *= CONSTANTS.FIELD_WIDTH / 2 * 0.8;
                     position.z *= CONSTANTS.FIELD_HEIGHT / 2 * 0.8;
+                    // Kickoff rule: every player starts in their own half. The raw
+                    // formation put both forwards across the halfway line, so every
+                    // kickoff started with two opponents already behind midfield.
+                    position.x = _this.homeTeam ? Math.min(position.x, -1.5) : Math.max(position.x, 1.5);
                     if (_this.players[index]) {
-                        _this.players[index].formationOffset = new THREE.Vector3(posData.x, 0, posData.z);
+                        _this.players[index].formationOffset = new THREE.Vector3(_this.homeTeam ? posData.x : -posData.x, 0, posData.z);
                         _this.players[index].initialPosition.copy(position);
                         _this.players[index].resetPosition();
                     }

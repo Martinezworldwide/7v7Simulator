@@ -14,6 +14,27 @@ https://martinezworldwide.github.io/7v7Simulator
 - Possession tracking
 - Aim indicators for shooting and passing
 
+## How the AI plays
+
+The AI is built on real football principles:
+
+- **Eight real tactical systems** per team (Balanced, Tiki-Taka, Counter Attack,
+  Gegenpress, Low Block, Wing Play, Long Ball, Total Football), each tuning line
+  height, compactness, pressing triggers, width, and pass risk
+- **Role-based team shape** (GK + 2-3-1) that shifts with the ball, compresses
+  when defending, and only sends designated players to chase loose balls
+- **Offside awareness**: runs are timed to the second-last defender and passes
+  are never played to an offside teammate
+- **Space-based passing**: receivers are valued on forward progression, how much
+  space they have, and whether an opponent can step into the passing lane
+- **Stamina**: sprinting drains players and tired players lose top speed;
+  jogging recovers them
+- **Real set pieces**: throw-ins, corners, and goal kicks awarded on the last
+  touch when the ball leaves the pitch, plus a goalkeeper who guards the line,
+  rushes loose balls, and clears upfield
+- **Tackles** require sustained close pressure, and an anti-stall rule clears
+  the ball if a carrier holds it too long, so play never freezes
+
 ## Setup
 
 1. Install dependencies:
@@ -56,9 +77,11 @@ The project can be deployed to any static hosting service. Here are some options
 
 ## Controls
 
-- Click and drag to move players
-- Click to shoot/pass when in possession
-- The aim indicator shows the direction and power of shots/passes
+- The match is fully autonomous: both teams play on their own with role-based tactics
+- Use the **Team 1 / Team 2 Tactics** panels to switch each team's style live
+  (Balanced, Tiki-Taka, Counter, Gegenpress, Low Block, Wing Play, Long Ball, Total Football)
+- The scoreboard (top centre) tracks the score and match clock, with **Pause** and **Restart match**
+- The yellow ring marks the player in possession; the white arrow shows shot/pass aim
 
 ## Development
 

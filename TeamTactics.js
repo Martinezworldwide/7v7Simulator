@@ -4,7 +4,14 @@ import { getTacticalStyle } from './TacticalStyles.js';
 
 export class TeamTactics {
     // Compute tactical targets and loose-ball assignments for the whole team
-    static compute(team, ball, hasPossession) {
+    static compute(team, ball, hasPossession, opponents = []) {
+        // Offside line = position of the second-last opponent (keeper + one
+        // defender is the usual case). Attacking runs are timed to stay onside.
+        let offsideLineX = null;
+        if (opponents.length >= 2) {
+            const xs = opponents.map((o) => o.mesh.position.x).sort((a, b) => a - b);
+            offsideLineX = team.homeTeam ? xs[xs.length - 2] : xs[1];
+        }
         const style = team.getTacticalStyleConfig();
         const ballPosition = ball.mesh.position;
         const attackDir = team.homeTeam ? 1 : -1;
@@ -51,8 +58,18 @@ export class TeamTactics {
             const targetX = anchorX + attackDir * depth + offset.x * halfWidth * 0.45;
             const targetZ = anchorZ + offset.z * halfHeight * roleWidthScale;
 
+            // Timed runs: when attacking, don't camp beyond the offside line
+            let clampedX = targetX;
+            if (phase === 'ATTACK' && offsideLineX !== null && player.role !== 'GOALKEEPER') {
+                if (team.homeTeam) {
+                    clampedX = Math.min(clampedX, Math.max(offsideLineX, ballPosition.x) - 0.5);
+                } else {
+                    clampedX = Math.max(clampedX, Math.min(offsideLineX, ballPosition.x) + 0.5);
+                }
+            }
+
             const tacticalTarget = new THREE.Vector3(
-                THREE.MathUtils.clamp(targetX, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2),
+                THREE.MathUtils.clamp(clampedX, -CONSTANTS.FIELD_WIDTH / 2, CONSTANTS.FIELD_WIDTH / 2),
                 0,
                 THREE.MathUtils.clamp(targetZ, -CONSTANTS.FIELD_HEIGHT / 2, CONSTANTS.FIELD_HEIGHT / 2)
             );

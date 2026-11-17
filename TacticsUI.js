@@ -26,31 +26,56 @@ export class TacticsUI {
             }
             .tactics-panel {
                 position: absolute;
-                top: 16px;
-                width: 220px;
+                top: 64px;
+                width: 196px;
                 pointer-events: auto;
                 background: rgba(8, 12, 18, 0.82);
                 border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 12px;
-                padding: 12px;
+                padding: 10px;
                 color: #f4f7fb;
                 box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
                 backdrop-filter: blur(8px);
             }
-            .tactics-panel.team1 { left: 16px; border-top: 3px solid #e53935; }
-            .tactics-panel.team2 { right: 16px; border-top: 3px solid #1e88e5; }
+            .tactics-panel.team1 { left: 10px; border-top: 3px solid #e53935; }
+            .tactics-panel.team2 { right: 10px; border-top: 3px solid #1e88e5; }
+            .tactics-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                cursor: pointer;
+                user-select: none;
+            }
             .tactics-title {
-                font-size: 14px;
+                font-size: 12px;
                 font-weight: 700;
                 letter-spacing: 0.04em;
                 text-transform: uppercase;
-                margin-bottom: 4px;
             }
+            .tactics-toggle {
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                background: rgba(255, 255, 255, 0.06);
+                color: #f8fbff;
+                border-radius: 6px;
+                font-size: 11px;
+                font-weight: 700;
+                line-height: 1;
+                padding: 4px 7px;
+                cursor: pointer;
+                flex: none;
+            }
+            .tactics-body { margin-top: 8px; }
+            .tactics-panel.collapsed .tactics-body { display: none; }
             .tactics-active {
                 font-size: 12px;
                 color: #c7d2e0;
                 margin-bottom: 10px;
-                min-height: 32px;
+            }
+            @media (max-width: 700px) {
+                .tactics-panel { top: auto; bottom: 10px; width: 160px; }
+                .tactics-panel.team1 { left: 10px; }
+                .tactics-panel.team2 { right: 10px; }
             }
             .tactics-grid {
                 display: grid;
@@ -100,10 +125,29 @@ export class TacticsUI {
     createTeamPanel(teamId, team, label) {
         const panel = document.createElement('div');
         panel.className = `tactics-panel team${teamId}`;
+        // Start collapsed on phone-sized screens so the dashboard never covers the pitch
+        if (window.innerWidth < 900) panel.classList.add('collapsed');
+
+        const header = document.createElement('div');
+        header.className = 'tactics-header';
 
         const title = document.createElement('div');
         title.className = 'tactics-title';
         title.textContent = `${label} Tactics`;
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'tactics-toggle';
+        const syncToggle = () => { toggle.textContent = panel.classList.contains('collapsed') ? 'Show' : 'Hide'; };
+        header.addEventListener('click', () => {
+            panel.classList.toggle('collapsed');
+            syncToggle();
+        });
+        header.appendChild(title);
+        header.appendChild(toggle);
+
+        const body = document.createElement('div');
+        body.className = 'tactics-body';
 
         const activeLabel = document.createElement('div');
         activeLabel.className = 'tactics-active';
@@ -129,10 +173,12 @@ export class TacticsUI {
             grid.appendChild(button);
         });
 
-        panel.appendChild(title);
-        panel.appendChild(activeLabel);
-        panel.appendChild(grid);
-        panel.appendChild(description);
+        body.appendChild(activeLabel);
+        body.appendChild(grid);
+        body.appendChild(description);
+        panel.appendChild(header);
+        panel.appendChild(body);
+        syncToggle();
         this.root.appendChild(panel);
 
         this.teamPanels[teamId] = {

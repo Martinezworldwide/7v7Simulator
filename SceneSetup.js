@@ -19,6 +19,14 @@ function _create_class(Constructor, protoProps, staticProps) {
 }
 import * as THREE from 'three';
 import * as CONSTANTS from './constants.js';
+// Vertical view span (world units) that fits the whole pitch at any aspect ratio.
+// The camera is tilted, so the pitch's Z extent is foreshortened by ~0.85 on screen.
+function computeViewSize(width, height) {
+    var aspect = width / height;
+    var verticalNeeded = CONSTANTS.FIELD_HEIGHT * 0.98;
+    var horizontalNeeded = CONSTANTS.FIELD_WIDTH * 1.08 / aspect;
+    return Math.max(verticalNeeded, horizontalNeeded);
+}
 var SceneSetup = /*#__PURE__*/ function() {
     "use strict";
     function SceneSetup(renderDiv) {
@@ -31,10 +39,10 @@ var SceneSetup = /*#__PURE__*/ function() {
         this.scene.background = new THREE.Color(0x55aa55); // Greenish background
         // Camera (Orthographic for top-down view)
         var aspect = width / height;
-        var viewSize = CONSTANTS.FIELD_HEIGHT * 1.1; // Adjust zoom level based on field height
+        var viewSize = computeViewSize(width, height);
         this.camera = new THREE.OrthographicCamera(-aspect * viewSize / 2, aspect * viewSize / 2, viewSize / 2, -viewSize / 2, 1, 1000);
-        this.camera.position.set(0, 50, 0); // Position directly above the center
-        this.camera.lookAt(0, 0, 0); // Look down at the center of the field
+        this.camera.position.set(0, 48, 30); // Raised and tilted back for a broadcast-style view
+        this.camera.lookAt(0, 0, 0); // Look at the center of the field
         this.scene.add(this.camera);
         // Lighting
         var ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
@@ -61,7 +69,7 @@ var SceneSetup = /*#__PURE__*/ function() {
                 var width = this.renderDiv.clientWidth;
                 var height = this.renderDiv.clientHeight;
                 var aspect = width / height;
-                var viewSize = CONSTANTS.FIELD_HEIGHT * 1.1;
+                var viewSize = computeViewSize(width, height);
                 this.camera.left = -aspect * viewSize / 2;
                 this.camera.right = aspect * viewSize / 2;
                 this.camera.top = viewSize / 2;

@@ -20,6 +20,14 @@ export class Game {
         this.team2 = null;
         this.ball = null;
         this.gameState = CONSTANTS.GAME_STATE.KICKOFF; // Initial state
+        this.score = { 1: 0, 2: 0 };
+        this.matchTime = 0;
+        this.lastPossessor = null;
+        this.possessionTime = 0;
+        this.scoreboardEl = null;
+        this.scoreTextEl = null;
+        this.clockEl = null;
+        this.goalFlashEl = null;
         this.possessionIndicator = null;
         this.aimIndicator = null;
         this.setupGame();
@@ -85,11 +93,185 @@ export class Game {
         this.aimIndicator.visible = false;
         this.scene.add(this.aimIndicator);
 
+        this.buildScoreboard();
         this.resetToKickoff();
+    }
+
+    buildScoreboard() {
+        if (document.getElementById('scoreboard')) return;
+        const style = document.createElement('style');
+        style.textContent = `
+            #scoreboard { position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+                z-index: 30; font-family: Arial, Helvetica, sans-serif;
+                display: flex; align-items: center; gap: 12px; white-space: nowrap;
+                background: rgba(8,12,18,0.82); color: #f4f7fb; border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 999px; padding: 6px 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+            #scoreboard .score { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; }
+            #scoreboard .score .red { color: #ff6f60; } #scoreboard .score .blue { color: #64b5f6; }
+            #scoreboard .clock { font-size: 12px; color: #c7d2e0; }
+            #scoreboard .controls { display: flex; gap: 6px; }
+            #scoreboard button { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06);
+                color: #f8fbff; border-radius: 8px; padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer; }
+            #scoreboard button:hover { background: rgba(255,255,255,0.14); }
+            #goal-flash { position: fixed; top: 38%; left: 50%; transform: translate(-50%,-50%);
+                z-index: 40; font-family: Arial, Helvetica, sans-serif; font-size: 64px; font-weight: 800;
+                color: #ffd54f; text-shadow: 0 4px 24px rgba(0,0,0,0.6); display: none; pointer-events: none; }
+        `;
+        document.head.appendChild(style);
+
+        const bar = document.createElement('div');
+        bar.id = 'scoreboard';
+        bar.innerHTML = `
+            <div class="score"><span class="red">RED</span> <span id="score-text">0 - 0</span> <span class="blue">BLUE</span></div>
+            <div class="clock" id="match-clock">00:00</div>
+            <div class="controls">
+                <button type="button" id="btn-pause">Pause</button>
+                <button type="button" id="btn-restart">Restart</button>
+            </div>`;
+        document.body.appendChild(bar);
+        this.scoreboardEl = bar;
+        this.scoreTextEl = bar.querySelector('#score-text');
+        this.clockEl = bar.querySelector('#match-clock');
+        bar.querySelector('#btn-pause').addEventListener('click', () => this.togglePause());
+        bar.querySelector('#btn-restart').addEventListener('click', () => this.restartMatch());
+
+        const flash = document.createElement('div');
+        flash.id = 'goal-flash';
+        flash.textContent = 'GOAL!';
+        document.body.appendChild(flash);
+        this.goalFlashEl = flash;
+    }
+
+    updateScoreboard() {
+        if (this.scoreTextEl) this.scoreTextEl.textContent = `${this.score[1]} - ${this.score[2]}`;
+        if (this.clockEl) {
+            const total = Math.floor(this.matchTime);
+            const mm = String(Math.floor(total / 60)).padStart(2, '0');
+            const ss = String(total % 60).padStart(2, '0');
+            this.clockEl.textContent = `${mm}:${ss}`;
+        }
+    }
+
+    togglePause() {
+        if (this.gameState === CONSTANTS.GAME_STATE.PAUSED) {
+            this.gameState = CONSTANTS.GAME_STATE.PLAYING;
+        } else if (this.gameState === CONSTANTS.GAME_STATE.PLAYING) {
+            this.gameState = CONSTANTS.GAME_STATE.PAUSED;
+        }
+        const btn = this.scoreboardEl ? this.scoreboardEl.querySelector('#btn-pause') : null;
+        if (btn) btn.textContent = this.gameState === CONSTANTS.GAME_STATE.PAUSED ? 'Resume' : 'Pause';
+    }
+
+    restartMatch() {
+        this.score = { 1: 0, 2: 0 };
+        this.matchTime = 0;
+        this.updateScoreboard();
+        this.resetToKickoff(1);
+    }
+
+    showFlash(text, ms = 1400) {
+        if (!this.goalFlashEl) return;
+        this.goalFlashEl.textContent = text;
+        this.goalFlashEl.style.display = 'block';
+        setTimeout(() => { this.goalFlashEl.style.display = 'none'; }, ms);
+    }
+
+    onGoal(scoringTeamId) {
+        this.score[scoringTeamId] += 1;
+        this.updateScoreboard();
+        console.log(`Goal for Team ${scoringTeamId}! Score: ${this.score[1]} - ${this.score[2]}`);
+        this.gameState = CONSTANTS.GAME_STATE.GOAL_SCORED;
+        this.showFlash('GOAL!');
+        const concedingTeamId = scoringTeamId === 1 ? 2 : 1;
+        setTimeout(() => this.resetToKickoff(concedingTeamId), 1600);
+    }
+
+    // Award a restart when the ball leaves the pitch (real set pieces instead
+    // of the old invisible walls). lastTouch decides who gets the ball.
+    takeSetPiece(kind, awardedTeamId, spot) {
+        const setPieceId = (this.setPieceId || 0) + 1;
+        this.setPieceId = setPieceId;
+        this.gameState = CONSTANTS.GAME_STATE.SET_PIECE;
+        this.ball.possessor = null;
+        this.ball.velocity.set(0, 0, 0);
+        this.ball.mesh.position.set(spot.x, CONSTANTS.BALL_RADIUS, spot.z);
+        this.lastPossessor = null;
+        this.possessionTime = 0;
+        const label = kind === 'THROW_IN' ? 'Throw-in' : kind === 'CORNER' ? 'Corner kick' : 'Goal kick';
+        console.log(`${label} for Team ${awardedTeamId}`);
+        this.showFlash(label, 900);
+
+        const awardedTeam = awardedTeamId === 1 ? this.team1 : this.team2;
+        setTimeout(() => {
+            if (this.setPieceId !== setPieceId || this.gameState !== CONSTANTS.GAME_STATE.SET_PIECE) return; // Superseded by a restart
+            if (kind === 'GOAL_KICK') {
+                const gk = awardedTeam.players.find(pl => pl.role === 'GOALKEEPER') || awardedTeam.players[0];
+                gk.mesh.position.set(spot.x * 0.92, 0, spot.z * 0.5);
+                this.ball.mesh.position.set(gk.mesh.position.x, CONSTANTS.BALL_RADIUS, gk.mesh.position.z);
+                this.ball.possessor = gk;
+                gk.hasBall = true;
+            } else if (kind === 'CORNER') {
+                // Nearest taker whips it toward the penalty spot
+                const taker = awardedTeam.players.reduce((best, pl) =>
+                    pl.mesh.position.distanceToSquared(this.ball.mesh.position) < best.mesh.position.distanceToSquared(this.ball.mesh.position) ? pl : best);
+                taker.mesh.position.set(spot.x * 0.98, 0, spot.z);
+                this.ball.mesh.position.set(spot.x, CONSTANTS.BALL_RADIUS, spot.z);
+                const goalX = awardedTeamId === 1 ? CONSTANTS.FIELD_WIDTH / 2 : -CONSTANTS.FIELD_WIDTH / 2;
+                const target = new THREE.Vector3(goalX * 0.78, 0, spot.z * 0.25);
+                const dir = target.sub(this.ball.mesh.position).normalize();
+                this.ball.lastTouchTeamId = awardedTeamId;
+                this.ball.velocity.copy(dir.multiplyScalar(17));
+            } else {
+                // Throw-in: nearest awarded player takes possession at the spot
+                const taker = awardedTeam.players.reduce((best, pl) =>
+                    pl.mesh.position.distanceToSquared(this.ball.mesh.position) < best.mesh.position.distanceToSquared(this.ball.mesh.position) ? pl : best);
+                taker.mesh.position.set(spot.x, 0, spot.z);
+                this.ball.mesh.position.set(spot.x, CONSTANTS.BALL_RADIUS, spot.z);
+                this.ball.possessor = taker;
+                taker.hasBall = true;
+                this.ball.lastTouchTeamId = awardedTeamId;
+            }
+            this.gameState = CONSTANTS.GAME_STATE.PLAYING;
+        }, 900);
+    }
+
+    checkOutOfBounds() {
+        if (this.ball.possessor) return; // Only a free ball can go out
+        const bp = this.ball.mesh.position;
+        const halfW = CONSTANTS.FIELD_WIDTH / 2;
+        const halfH = CONSTANTS.FIELD_HEIGHT / 2;
+        const lastTouch = this.ball.lastTouchTeamId;
+        if (Math.abs(bp.z) > halfH + CONSTANTS.BALL_RADIUS) {
+            const awarded = lastTouch === 1 ? 2 : 1;
+            const spot = new THREE.Vector3(
+                THREE.MathUtils.clamp(bp.x, -halfW + 2, halfW - 2), 0,
+                Math.sign(bp.z) * (halfH - 0.5));
+            this.takeSetPiece('THROW_IN', awarded, spot);
+            return;
+        }
+        if (Math.abs(bp.x) > halfW + CONSTANTS.BALL_RADIUS) {
+            const attackingTeam = bp.x > 0 ? 1 : 2; // Team attacking this end
+            const inMouth = Math.abs(bp.z) <= CONSTANTS.GOAL_WIDTH / 2;
+            if (inMouth) return; // Goal check handles it
+            const side = Math.sign(bp.x);
+            if (lastTouch === attackingTeam) {
+                // Attacker touched it last over the goal line: goal kick
+                const defendingTeam = attackingTeam === 1 ? 2 : 1;
+                const spot = new THREE.Vector3(side * (halfW - 6), 0, side * 0); // near defending goal
+                spot.z = THREE.MathUtils.clamp(bp.z, -8, 8);
+                this.takeSetPiece('GOAL_KICK', defendingTeam, spot);
+            } else {
+                // Defender touched it last: corner to the attackers
+                const spot = new THREE.Vector3(side * (halfW - 0.5), 0, Math.sign(bp.z || 1) * (halfH - 0.5));
+                this.takeSetPiece('CORNER', attackingTeam, spot);
+            }
+        }
     }
 
     resetToKickoff(kickingTeamId = 1) {
         console.log(`Kickoff! Team ${kickingTeamId} starts.`);
+        this.lastPossessor = null;
+        this.possessionTime = 0;
         this.ball.reset();
         this.team1.resetPositions(true); // Home team left
         this.team2.resetPositions(false); // Away team right
@@ -108,17 +290,11 @@ export class Game {
         this.ball.possessor = centerPlayer;
         centerPlayer.hasBall = true;
 
-        // Small delay before starting play
+        // Small delay before starting play. The kickoff carrier keeps the ball
+        // and normal play develops from there - the old blind kickoff kick just
+        // gifted possession to the opponent's forwards every restart.
         setTimeout(() => {
             this.gameState = CONSTANTS.GAME_STATE.PLAYING;
-            if (this.ball.possessor) {
-                // Initial "kick" towards opponent goal
-                const direction = kickingTeamId === 1
-                    ? new THREE.Vector3(1, 0, 0)
-                    : new THREE.Vector3(-1, 0, 0);
-                this.ball.kick(direction.multiplyScalar(CONSTANTS.INITIAL_KICK_STRENGTH));
-                // The kick method already handles setting hasBall=false and possessor=null
-            }
         }, 1000); // 1 second delay
     }
 
@@ -129,11 +305,43 @@ export class Game {
         // Clamp deltaTime to prevent instability when tab is backgrounded
         deltaTime = Math.min(deltaTime, 0.033); // Max ~33ms per frame (approx 30 FPS)
 
+        if (this.gameState === CONSTANTS.GAME_STATE.PAUSED) {
+            return; // Frozen until resumed
+        }
+
         if (this.gameState !== CONSTANTS.GAME_STATE.PLAYING) {
-            // Only update ball physics if needed when not playing
-            // Pass clamped deltaTime for ball physics if not playing, as player AI isn't running.
-            this.ball.update(deltaTime, this.team1.players.concat(this.team2.players), this);
+            // Only update ball physics if needed when not playing (never during a
+            // set piece: the placed ball is dead until the restart is taken)
+            if (this.gameState !== CONSTANTS.GAME_STATE.SET_PIECE) {
+                this.ball.update(deltaTime, this.team1.players.concat(this.team2.players), this);
+            }
             return; // Don't update players if not playing
+        }
+
+        this.matchTime += deltaTime;
+        this.updateScoreboard();
+
+        // Anti-stall: if one player holds the ball too long without anything
+        // happening (e.g. pinned against a boundary), force a clearance toward
+        // the opponent's goal so play can never freeze again.
+        if (this.ball.possessor) {
+            if (this.ball.possessor === this.lastPossessor) {
+                this.possessionTime += deltaTime;
+            } else {
+                this.lastPossessor = this.ball.possessor;
+                this.possessionTime = 0;
+            }
+            if (this.possessionTime > 6) {
+                const holder = this.ball.possessor;
+                const goalX = holder.teamId === 1 ? CONSTANTS.FIELD_WIDTH / 2 : -CONSTANTS.FIELD_WIDTH / 2;
+                const clearDir = new THREE.Vector3(goalX, 0, 0).sub(holder.mesh.position).normalize();
+                this.ball.kick(clearDir.multiplyScalar(CONSTANTS.PASS_STRENGTH));
+                this.lastPossessor = null;
+                this.possessionTime = 0;
+            }
+        } else {
+            this.lastPossessor = null;
+            this.possessionTime = 0;
         }
 
         // Update Ball first (using clamped deltaTime for physics consistency)
@@ -146,13 +354,19 @@ export class Game {
         this.team1.update(deltaTime, originalDeltaTime, this.ball, possessingTeam === 1, this.team2.players, this);
         this.team2.update(deltaTime, originalDeltaTime, this.ball, possessingTeam === 2, this.team1.players, this);
 
-        // Check for goals
-        if (this.ball.mesh.position.x > CONSTANTS.FIELD_WIDTH / 2 + CONSTANTS.GOAL_DEPTH / 2) {
-            console.log("Goal for Team 1!");
-            this.resetToKickoff(2); // Team 2 kicks off next
-        } else if (this.ball.mesh.position.x < -CONSTANTS.FIELD_WIDTH / 2 - CONSTANTS.GOAL_DEPTH / 2) {
-            console.log("Goal for Team 2!");
-            this.resetToKickoff(1); // Team 1 kicks off next
+        // Out of bounds -> set pieces (throw-ins, corners, goal kicks)
+        this.checkOutOfBounds();
+        if (this.gameState !== CONSTANTS.GAME_STATE.PLAYING) return;
+
+        // Check for goals: ball centre past the goal line, inside the goal mouth
+        const ballPos = this.ball.mesh.position;
+        const inGoalMouth = Math.abs(ballPos.z) <= CONSTANTS.GOAL_WIDTH / 2;
+        if (inGoalMouth && ballPos.x > CONSTANTS.FIELD_WIDTH / 2 + CONSTANTS.BALL_RADIUS) {
+            this.onGoal(1);
+            return;
+        } else if (inGoalMouth && ballPos.x < -CONSTANTS.FIELD_WIDTH / 2 - CONSTANTS.BALL_RADIUS) {
+            this.onGoal(2);
+            return;
         }
 
         // Update possession indicator
