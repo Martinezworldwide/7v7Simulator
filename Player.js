@@ -96,7 +96,29 @@ var Player = /*#__PURE__*/ function() {
                         // Clear it long toward the opponent's half once controlled
                         this.ballControlTime = (this.ballControlTime || 0) + deltaTime;
                         desiredDirection.set(0, 0, 0);
-                        if (this.ballControlTime > 0.5) {
+                        if (this.ballControlTime > 0.7) {
+                            // Build out short when a defender or midfielder is free -
+                            // real keepers only go long when they have to
+                            var outlet = null;
+                            var outletDist = Infinity;
+                            teammates.forEach(function(ally) {
+                                if (ally === _this || ally.role === 'GOALKEEPER') return;
+                                var d = myPosition.distanceTo(ally.mesh.position);
+                                if (d < 4 || d > 27) return;
+                                var marked = false;
+                                opponents.forEach(function(opp) {
+                                    if (opp.mesh.position.distanceTo(ally.mesh.position) < 4.5) marked = true;
+                                });
+                                if (!marked && d < outletDist) { outletDist = d; outlet = ally; }
+                            });
+                            if (outlet) {
+                                var outVec = new THREE.Vector3().subVectors(outlet.mesh.position, myPosition).normalize().multiplyScalar(THREE.MathUtils.clamp(outletDist * 1.5, 10, 24));
+                                this.actionState = 'GK_DISTRIBUTING';
+                                this.kickAimDirection = outVec.clone().normalize();
+                                this.kickAimStrength = outVec.length();
+                                this.tryKick(ball, outVec);
+                                return;
+                            }
                             var clearTarget = new THREE.Vector3(oppGoalX, 0, (myPosition.z >= 0 ? -1 : 1) * CONSTANTS.FIELD_HEIGHT * 0.25);
                             var clearVec = new THREE.Vector3().subVectors(clearTarget, myPosition).normalize().multiplyScalar(CONSTANTS.MAX_KICK_SPEED * 0.85);
                             this.actionState = 'CLEARING';
@@ -107,8 +129,12 @@ var Player = /*#__PURE__*/ function() {
                             this.actionState = 'GK_HOLDING';
                         }
                     } else {
-                        var guardX = ownGoalX + (this.teamId === 1 ? 2.5 : -2.5);
-                        var guardZ = THREE.MathUtils.clamp(ballPosition.z * 0.9, -CONSTANTS.GOAL_WIDTH / 2 - 1, CONSTANTS.GOAL_WIDTH / 2 + 1);
+                        // Arc positioning: the keeper holds an arc in front of goal,
+                        // stepping further out (sweeper) the further the ball is away
+                        var distBallToGoal = Math.abs(ballPosition.x - ownGoalX);
+                        var offLine = THREE.MathUtils.clamp(2.2 + (distBallToGoal - 12) * 0.14, 2.2, 9.5);
+                        var guardX = ownGoalX + (this.teamId === 1 ? offLine : -offLine);
+                        var guardZ = THREE.MathUtils.clamp(ballPosition.z * 0.7, -CONSTANTS.GOAL_WIDTH / 2 - 1.5, CONSTANTS.GOAL_WIDTH / 2 + 1.5);
                         var guardPos = new THREE.Vector3(guardX, 0, guardZ);
                         var ballNearGoal = Math.abs(ballPosition.x - ownGoalX) < 14;
                         if (!ball.possessor && ballNearGoal && distanceToBall < 9) {
@@ -138,6 +164,9 @@ var Player = /*#__PURE__*/ function() {
                             // New possession: roll how long this player will carry
                             // the ball before looking to pass (shots come sooner)
                             this.decisionTime = 1.2 + Math.random() * 1.6;
+                            // Before looking to pass, the carrier first carries the
+                            // ball - dribbling into space is the default, not the exception
+                            this.carryTime = 0.4 + Math.random() * 1.2;
                         }
                         this.ballControlTime = (this.ballControlTime || 0) + deltaTime;
                         var canKick = this.ballControlTime > this.decisionTime;
@@ -190,6 +219,13 @@ var Player = /*#__PURE__*/ function() {
                                     });
                                     score += Math.min(allySpace, 15) * 0.35;
                                     if (laneRisk < 2.5) score -= 6;
+                                    // Switch of play: when this side is clogged with
+                                    // opponents, the far-side free man is the best pass
+                                    if (Math.sign(ally.mesh.position.z) !== Math.sign(myPosition.z) && Math.abs(ally.mesh.position.z) > 8) {
+                                        var nearMe = 0;
+                                        opponents.forEach(function(o) { if (o.mesh.position.distanceTo(myPosition) < 10) nearMe++; });
+                                        if (nearMe >= 3) score += 4;
+                                    }
                                     if (score > passTargetScore) {
                                         passTargetScore = score;
                                         potentialPassTarget = ally;
@@ -215,44 +251,64 @@ var Player = /*#__PURE__*/ function() {
                         }
                         var closestOpponentDist = this.getClosestOpponentDistance(opponents);
                         var passChance = CONSTANTS.PASS_PROBABILITY * style.passProbabilityMod;
-                        var shouldAttemptPass = canKick && potentialPassTarget && (Math.random() < passChance || closestOpponentDist < CONSTANTS.PASS_PRESSURE_DISTANCE * (style.passProbabilityMod > 1.5 ? 1.3 : 1.0));
-                        if (shouldAttemptPass) {
-                            var passDirection = new THREE.Vector3().subVectors(potentialPassTarget.mesh.position, myPosition);
-                            // Add a slight lead to the pass target
-                            var leadFactor = THREE.MathUtils.clamp(passDirection.length() / CONSTANTS.PASS_MAX_RANGE, 0.1, 0.5);
-                            passDirection.addScaledVector(potentialPassTarget.velocity, leadFactor); // Simple lead pass
+                        var distToGoal = myPosition.distanceTo(new THREE.Vector3(goalX, 0, 0));
+                        var shootRange = CONSTANTS.SHOOTING_RANGE * style.shootAggression;
+                        var underPressure = closestOpponentDist < 2.3;
+                        // Carry phase: dribble first, unless closed down hard
+                        var inCarryPhase = this.ballControlTime < (this.carryTime || 0.8) && !underPressure;
+                        // Shooting as a decision: close range, pressed, or a clear look
+                        var centralEnough = Math.abs(myPosition.z) < 16 || distToGoal < 12;
+                        var shouldShoot = canShoot && distToGoal < shootRange && centralEnough && (distToGoal < 15 || underPressure || Math.random() < 0.18);
+                        var shouldAttemptPass = !inCarryPhase && canKick && potentialPassTarget && (Math.random() < passChance || closestOpponentDist < CONSTANTS.PASS_PRESSURE_DISTANCE * (style.passProbabilityMod > 1.5 ? 1.3 : 1.0));
+                        if (shouldShoot) {
+                            var shootStrength = CONSTANTS.MAX_KICK_SPEED * THREE.MathUtils.lerp(0.8, 1.0, 1.0 - distToGoal / shootRange);
+                            // Far corner, with human placement error
+                            var aimZ = (myPosition.z >= 0 ? -1 : 1) * CONSTANTS.GOAL_WIDTH * 0.32 + (Math.random() - 0.5) * 1.8;
+                            var kickVector1 = new THREE.Vector3(goalX, 0, aimZ).sub(myPosition).normalize().multiplyScalar(shootStrength);
+                            this.actionState = 'SHOOTING';
+                            this.kickAimDirection = kickVector1.clone().normalize();
+                            this.kickAimStrength = kickVector1.length();
+                            this.tryKick(ball, kickVector1);
+                        } else if (shouldAttemptPass) {
+                            // Lead the pass into the receiver's run, with aim error
+                            // that grows with distance and pressure
+                            var flightTime = Math.max(0.15, distToPotentialPassTarget / (CONSTANTS.PASS_STRENGTH * style.passStrengthMod));
+                            var aimPoint = potentialPassTarget.mesh.position.clone().addScaledVector(potentialPassTarget.velocity, flightTime * 0.85);
+                            var aimErr = 0.4 + distToPotentialPassTarget * 0.03 + (underPressure ? 0.9 : 0);
+                            aimPoint.x += (Math.random() - 0.5) * aimErr;
+                            aimPoint.z += (Math.random() - 0.5) * aimErr;
+                            var passDirection = aimPoint.sub(myPosition);
+                            var aimDist = passDirection.length();
                             passDirection.normalize();
-                            var passStrength = CONSTANTS.PASS_STRENGTH * style.passStrengthMod * THREE.MathUtils.clamp(distToPotentialPassTarget / CONSTANTS.PASS_MAX_RANGE, 0.7, 1.2);
+                            var passStrength = CONSTANTS.PASS_STRENGTH * style.passStrengthMod * THREE.MathUtils.clamp(aimDist / CONSTANTS.PASS_MAX_RANGE, 0.7, 1.25);
                             var kickVector = passDirection.multiplyScalar(passStrength);
                             this.actionState = 'PASSING';
                             this.kickAimDirection = kickVector.clone().normalize();
                             this.kickAimStrength = kickVector.length();
                             this.tryKick(ball, kickVector);
-                        } else if (Math.random() < style.dribbleBias * 0.15 || style.dribbleBias >= 1.2) {
-                            // Dribble or Shoot based on tactical style
-                            desiredDirection = goalDirection;
-                            this.actionState = 'DRIBBLE';
-                            var distToGoal = myPosition.distanceTo(new THREE.Vector3(goalX, 0, 0));
-                            var shootRange = CONSTANTS.SHOOTING_RANGE * style.shootAggression;
-                            if (canShoot && distToGoal < shootRange && (Math.random() < 0.4 || closestOpponentDist < CONSTANTS.PASS_PRESSURE_DISTANCE)) {
-                                var shootStrength = CONSTANTS.MAX_KICK_SPEED * THREE.MathUtils.lerp(0.8, 1.0, 1.0 - distToGoal / shootRange);
-                                // Aim at the far corner, not at the keeper
-                                var aimZ = (myPosition.z >= 0 ? -1 : 1) * CONSTANTS.GOAL_WIDTH * 0.32;
-                                var kickVector1 = new THREE.Vector3(goalX, 0, aimZ).sub(myPosition).normalize().multiplyScalar(shootStrength);
-                                this.actionState = 'SHOOTING';
-                                this.kickAimDirection = kickVector1.clone().normalize();
-                                this.kickAimStrength = kickVector1.length();
-                                this.tryKick(ball, kickVector1);
-                            }
-                        } else if (potentialPassTarget) {
-                            // Possession styles recycle the ball and probe for a better passing lane
-                            desiredDirection = goalDirection;
-                            this.actionState = 'HOLDING_BALL';
-                            targetSpeed *= 0.85 * style.supportBlendMod;
                         } else {
-                            desiredDirection = goalDirection;
+                            // DRIBBLE - the default, not the fallback: carry into
+                            // space, veering away from the nearest opponent and
+                            // steering off the touchline before it traps you
+                            var dribbleDir = goalDirection.clone();
+                            var nearestOpp = null;
+                            var nearestOppDist = Infinity;
+                            opponents.forEach(function(opp) {
+                                var d = myPosition.distanceTo(opp.mesh.position);
+                                if (d < nearestOppDist) { nearestOppDist = d; nearestOpp = opp; }
+                            });
+                            if (nearestOpp && nearestOppDist < 6) {
+                                var veerSide = nearestOpp.mesh.position.z > myPosition.z ? -1 : 1;
+                                dribbleDir.z += veerSide * 0.55;
+                                dribbleDir.normalize();
+                            }
+                            if (Math.abs(myPosition.z) > CONSTANTS.FIELD_HEIGHT / 2 - 4) {
+                                dribbleDir.z += myPosition.z > 0 ? -0.6 : 0.6;
+                                dribbleDir.normalize();
+                            }
+                            desiredDirection = dribbleDir;
                             this.actionState = 'DRIBBLE';
-                            targetSpeed *= 0.7;
+                            targetSpeed *= inCarryPhase ? 0.92 : 0.8;
                         }
                     } else {
                         // Off-ball attackers maintain width and depth using the tactical shape
@@ -282,21 +338,24 @@ var Player = /*#__PURE__*/ function() {
                             targetSpeed *= 0.85;
                         } else {
                             this.moveTowardTacticalPosition(myPosition, tacticalTarget, desiredDirection, distanceToTacticalTarget, 'ATTACKING_SHAPE');
-                            targetSpeed *= this.role === 'FORWARD' ? 0.95 : 0.75;
+                            targetSpeed *= this.role === 'FORWARD' ? 0.8 : 0.6;
                         }
                     }
                 } else {
                     // --- DEFENDING LOGIC ---
                     var shouldPress = style.pressRoles.indexOf(this.role) !== -1 && phase === 'DEFEND' && distanceToBall < style.pressDistance;
                     if (shouldPress) {
+                        // Press goal-side on a curved run - get between ball and
+                        // goal, then jockey at close range instead of diving past
                         var pressTarget = ballPosition.clone();
-                        pressTarget.z = THREE.MathUtils.lerp(ballPosition.z, this.initialPosition.z, 0.5);
+                        pressTarget.x += this.teamId === 1 ? -0.6 : 0.6;
+                        pressTarget.z = THREE.MathUtils.lerp(ballPosition.z, this.initialPosition.z, 0.25);
                         TeamTactics.directionToward(myPosition, pressTarget, desiredDirection);
                         this.actionState = 'PRESSING';
-                        targetSpeed *= 0.9;
+                        targetSpeed *= distanceToBall < 1.8 ? 0.55 : 1.0;
                     } else {
                         this.moveTowardTacticalPosition(myPosition, tacticalTarget, desiredDirection, distanceToTacticalTarget, 'HOLDING_SHAPE');
-                        targetSpeed *= this.role === 'DEFENDER' ? 0.7 : 0.8;
+                        targetSpeed *= this.role === 'DEFENDER' ? 0.55 : 0.65;
                     }
                 }
                 // --- Movement ---
@@ -309,26 +368,57 @@ var Player = /*#__PURE__*/ function() {
                     this.stamina = Math.min(1, this.stamina + 0.02 * deltaTime);
                 }
                 targetSpeed *= 0.72 + 0.28 * this.stamina;
-                // Apply steering behavior (simplified)
-                // Calculate desired velocity
-                var desiredVelocity = desiredDirection.multiplyScalar(targetSpeed);
-                // Calculate steering force (acceleration) towards desired velocity
-                var steeringForce = desiredVelocity.clone().sub(this.velocity);
-                steeringForce.multiplyScalar(CONSTANTS.PLAYER_ACCELERATION * deltaTime); // Scale by acceleration and time
-                // Apply steering force to velocity
-                this.velocity.add(steeringForce);
-                // Apply damping/friction if not actively accelerating hard
-                // This helps players slow down more naturally when not pushing in a direction
-                var desiredSpeedSq = desiredVelocity.lengthSq();
-                if (desiredSpeedSq < 0.1) {
-                    this.velocity.multiplyScalar(1.0 - CONSTANTS.PLAYER_DAMPING * deltaTime);
+                // --- Human movement model ---
+                // Speed zones by distance to the job: real players walk and jog
+                // most of a match and only sprint for decisive moments
+                var jobDistance = distanceToTacticalTarget;
+                if (this.hasBall) jobDistance = 99;
+                if (this.actionState === 'CHASING_LOOSE_BALL' || this.actionState === 'GK_RUSHING') jobDistance = distanceToBall;
+                if (this.actionState === 'PRESSING') jobDistance = Math.max(distanceToBall, 4.5);
+                var zoneCap = targetSpeed;
+                if (jobDistance <= 3) zoneCap = Math.min(zoneCap, CONSTANTS.SPEED_WALK);
+                else if (jobDistance <= 8) zoneCap = Math.min(zoneCap, CONSTANTS.SPEED_JOG);
+                else if (jobDistance <= 20) zoneCap = Math.min(zoneCap, CONSTANTS.SPEED_RUN);
+                // Sprinting is reserved for decisive actions - chasing a loose
+                // ball, pressing, carrying it, rushing out. Shape movement tops
+                // out at a run, which is why real players are not gassed by 20'
+                var canSprint = this.hasBall || this.actionState === 'CHASING_LOOSE_BALL' || this.actionState === 'PRESSING' || this.actionState === 'GK_RUSHING';
+                if (!canSprint) zoneCap = Math.min(zoneCap, CONSTANTS.SPEED_RUN);
+                if (jobDistance <= 3) {
+                    // Arrive: ease in over the last few metres instead of
+                    // oscillating around the spot
+                    targetSpeed = Math.min(targetSpeed, Math.max(CONSTANTS.SPEED_WALK, jobDistance * 1.1));
+                } else {
+                    targetSpeed = Math.min(targetSpeed, zoneCap);
                 }
-                // Clamp velocity to the player's current maximum possible speed (targetSpeed)
-                if (this.velocity.lengthSq() > targetSpeed * targetSpeed) {
-                    this.velocity.normalize().multiplyScalar(targetSpeed);
+                if (desiredDirection.lengthSq() < 0.0001) targetSpeed = 0;
+                // Turn limit: a running player cannot reverse direction instantly.
+                // The desired heading rotates at a rate that shrinks with speed,
+                // which produces curved, believable runs instead of robot pivots
+                var desiredVelocity = desiredDirection.clone().multiplyScalar(targetSpeed);
+                var curSpeedNow = this.velocity.length();
+                var desSpeed = desiredVelocity.length();
+                if (curSpeedNow > 0.05 && desSpeed > 0.05) {
+                    var curDir = this.velocity.clone().normalize();
+                    var desDir = desiredVelocity.clone().normalize();
+                    var angleBetween = curDir.angleTo(desDir);
+                    var maxTurn = 3.2 * Math.min(1, 4.5 / curSpeedNow) * deltaTime;
+                    if (angleBetween > maxTurn && angleBetween > 0.0001) {
+                        var turnAxis = new THREE.Vector3().crossVectors(curDir, desDir);
+                        if (turnAxis.lengthSq() < 0.0001) turnAxis.set(0, 1, 0); else turnAxis.normalize();
+                        desDir.copy(curDir).applyAxisAngle(turnAxis, maxTurn);
+                        desiredVelocity.copy(desDir).multiplyScalar(desSpeed);
+                    }
                 }
+                // Acceleration limit: approach the desired velocity at a human
+                // rate (braking is quicker than accelerating)
+                var accelRate = desSpeed > curSpeedNow ? 7.5 : 11.0;
+                var dv = desiredVelocity.sub(this.velocity);
+                var maxDv = accelRate * deltaTime;
+                if (dv.length() > maxDv) dv.normalize().multiplyScalar(maxDv);
+                this.velocity.add(dv);
                 // Stop if velocity is very low
-                if (this.velocity.lengthSq() < 0.01) {
+                if (this.velocity.lengthSq() < 0.01 && targetSpeed === 0) {
                     this.velocity.set(0, 0, 0);
                 }
                 // Separation repulsion to prevent players clumping

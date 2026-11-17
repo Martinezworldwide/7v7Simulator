@@ -8,7 +8,12 @@ export var CENTER_CIRCLE_RADIUS = 9.15;
 // Player Properties
 export var PLAYER_RADIUS = 0.5;
 export var PLAYER_HEIGHT = 1.8;
-export var PLAYER_MAX_SPEED = 8.5; // m/s (adjust for game speed)
+export var PLAYER_MAX_SPEED = 8.5;
+// Real players live in speed zones: walk and jog most of the match,
+// run to recover shape, sprint only for decisive moments
+export var SPEED_WALK = 1.7;
+export var SPEED_JOG = 3.4;
+export var SPEED_RUN = 5.8; // m/s (adjust for game speed)
 export var PLAYER_ACCELERATION = 15.0; // m/s^2 (how quickly players reach max speed)
 export var PLAYER_DAMPING = 3.0; // How quickly players slow down when not accelerating
 export var PLAYERS_PER_TEAM = 7; // 7v7

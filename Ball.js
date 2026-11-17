@@ -97,7 +97,7 @@ export class Ball {
             if (this.possessor === player) continue; // Don't collide with possessor
 
             // Goalkeepers get a dive reach: they save balls a normal player can't touch
-            const reach = player.role === 'GOALKEEPER' ? 1.25 : collisionThreshold;
+            const reach = player.role === 'GOALKEEPER' ? 1.5 : collisionThreshold;
             const distanceSq = this.mesh.position.distanceToSquared(player.mesh.position);
             if (distanceSq < reach * reach) {
                 // --- Collision occurred ---

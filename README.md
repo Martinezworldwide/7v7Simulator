@@ -16,6 +16,15 @@ https://martinezworldwide.github.io/7v7Simulator
 
 ## How the AI plays
 
+### Realism overhaul
+- **Human movement model** - players live in speed zones (walk ~1.7 m/s, jog ~3.4, run ~5.8, sprint only for decisive moments like chasing a loose ball or carrying it), with acceleration limits and speed-dependent turn rates, so runs curve instead of pivoting robotically. In simulated matches sprinting is ~3% of player time, like real football.
+- **Team shape as a unit** - the whole block shifts side-to-side with the ball on a smoothed anchor, squeezes compact when defending, stretches wide in possession, tucks far-side players in, and splits defenders wide to build out of the back.
+- **Support triangles** - the two nearest teammates offer the carrier ahead-side and behind-side angles instead of standing in formation spots.
+- **Dribbling is the default** - carriers first carry the ball into space, veering away from the nearest opponent and off the touchline; passing and shooting are decisions made under pressure, at range, or when a lane opens. Passes are led into the receiver's run with human aim error that grows with distance and pressure, and clogged sides trigger switches of play to the far-side free man.
+- **Defending with restraint** - the presser approaches goal-side on a curved run and jockeys at close range instead of diving in; teammates hold a compact shape and step into passing lanes to intercept.
+- **Goalkeepers** - arc positioning that steps out as a sweeper when the ball is far away, short distribution to a free defender when available, long clearance only when needed.
+
+
 The AI is built on real football principles:
 
 - **Eight real tactical systems** per team (Balanced, Tiki-Taka, Counter Attack,
